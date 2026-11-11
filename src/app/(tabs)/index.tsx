@@ -6,12 +6,13 @@ import {
   Linking,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   useColorScheme,
   View,
 } from "react-native";
-import MapView, { Callout, Marker, type Region } from "react-native-maps";
+import MapView, { Callout, Marker, type Region } from "@/features/map/map-view";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/theme";
 import { fetchPlaces, type PlaceOption } from "@/features/voluntariados/api";
@@ -170,12 +171,29 @@ export default function MapTabScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {Platform.OS === "web" ? (
-        <View style={styles.webFallback}>
+        <ScrollView contentContainerStyle={styles.webFallback}>
           <Text style={[styles.title, { color: colors.text }]}>Mapa de Regenera</Text>
           <Text style={[styles.body, { color: colors.textSecondary }]}>
-            Abre la app en un dispositivo iOS o Android para explorar el mapa.
+            Vista de prueba web: abre cada lugar en OpenStreetMap. El mapa interactivo está disponible en iPhone y Android.
           </Text>
-        </View>
+          {places.map((place) => (
+            <Pressable
+              key={place.id}
+              accessibilityRole="link"
+              onPress={() => Linking.openURL(openStreetMapUrl(place.lat, place.lng))}
+              style={[styles.webPlace, { backgroundColor: colors.backgroundElement }]}
+            >
+              <Text style={[styles.placeTitle, { color: colors.text }]}>{place.nombre}</Text>
+              {!!place.municipio && (
+                <Text style={[styles.placeSubtitle, { color: colors.textSecondary }]}>{place.municipio}</Text>
+              )}
+              <Text style={styles.webMapLinkText}>Abrir en OpenStreetMap →</Text>
+            </Pressable>
+          ))}
+          {!placesLoading && !placesError && places.length === 0 && (
+            <Text style={[styles.body, { color: colors.textSecondary }]}>No hay lugares disponibles para mostrar.</Text>
+          )}
+        </ScrollView>
       ) : (
         mapContent
       )}
@@ -266,7 +284,7 @@ export default function MapTabScreen() {
         </View>
       )}
 
-      {permissionChecked && (!hasLocationPermission || locationError) && (
+      {Platform.OS !== "web" && permissionChecked && (!hasLocationPermission || locationError) && (
         <View
           style={[
             styles.permissionCard,
@@ -315,7 +333,7 @@ export default function MapTabScreen() {
         </View>
       )}
 
-      {permissionChecked && hasLocationPermission && !locationError && (
+      {Platform.OS !== "web" && permissionChecked && hasLocationPermission && !locationError && (
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Centrar mapa en mi ubicación"
@@ -542,9 +560,21 @@ const styles = StyleSheet.create({
   },
   webFallback: {
     flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 32,
+    gap: 12,
+    paddingHorizontal: 18,
+    paddingTop: 196,
+    paddingBottom: 24,
+  },
+  webPlace: {
+    padding: 14,
+    borderRadius: 14,
+    gap: 4,
+  },
+  webMapLinkText: {
+    color: "#164F3D",
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 4,
   },
   pressed: {
     opacity: 0.8,
@@ -553,3 +583,7 @@ const styles = StyleSheet.create({
     opacity: 0.65,
   },
 });
+
+function openStreetMapUrl(latitude: number, longitude: number): string {
+  return `https://www.openstreetmap.org/?mlat=${latitude}&mlon=${longitude}#map=15/${latitude}/${longitude}`;
+}

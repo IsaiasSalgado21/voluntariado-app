@@ -33,7 +33,9 @@ description when available. It does not display demonstration polygons or
 activities. The volunteer list and details use the public
 `/api/v1/mapa/voluntariados` endpoint and `/api/v1/mapa/lugares` for place
 filters; unpublished activities and records without map coordinates are not
-shown.
+shown. Volunteer images are returned as API-served URLs and displayed in list
+cards and details. Search remains visible while category, place, date, and
+capacity filters can be expanded only when needed.
 
 The Flora y fauna catalog uses the public `GET /api/flora-fauna` endpoint and
 shows published records, including the habitat, conservation status, and images
@@ -78,6 +80,12 @@ development build must be rebuilt after adding the `expo-camera` config plugin;
 Expo Go uses the native camera module already included in Expo Go. Native
 push notifications are still not included because the API only exposes Web
 Push subscriptions.
+
+For browser-based development checks, run `npx expo start --web`. Native map
+and date/time picker modules are loaded only on iOS and Android; on web, the
+map tab lists places with links to OpenStreetMap and activity dates/times can
+be entered as text. This is a lightweight development fallback, not a web
+deployment target.
 
 In the output, you'll find options to open the app in a
 

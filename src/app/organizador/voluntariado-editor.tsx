@@ -1,4 +1,4 @@
-import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import DateTimePicker, { type DateTimePickerEvent } from "@/features/organizador/date-time-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -255,7 +255,6 @@ export default function ManagedVolunteerEditorScreen() {
             <DateTimePicker
               value={form[picker.field]}
               mode={picker.mode}
-              display="default"
               onChange={onDateChange}
             />
           )}

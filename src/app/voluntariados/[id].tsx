@@ -10,8 +10,9 @@ import {
   Text,
   View,
 } from "react-native";
-import MapView, { Marker } from "react-native-maps";
+import MapView, { Marker } from "@/features/map/map-view";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { VolunteerPhoto } from "@/features/voluntariados/volunteer-photo";
 import { Colors } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useSession } from "@/features/auth/use-session";
@@ -195,6 +196,12 @@ export default function VolunteerDetailScreen() {
         <Text style={styles.backText}>‹  Voluntariados</Text>
       </Pressable>
 
+      <VolunteerPhoto
+        uri={volunteer.imagen ?? volunteer.imagenes[0] ?? null}
+        title={volunteer.titulo}
+        variant="detail"
+      />
+
       <View style={[styles.hero, { backgroundColor: colors.backgroundElement }]}>
         <Text style={styles.eyebrow}>REGENERA · PARTICIPA</Text>
         <Text style={[styles.title, { color: colors.text }]}>{volunteer.titulo}</Text>
@@ -352,8 +359,7 @@ export default function VolunteerDetailScreen() {
 
         <View style={[styles.notice, { backgroundColor: colors.backgroundElement }]}>
           <Text style={[styles.muted, { color: colors.textSecondary }]}>
-            La API pública disponible para la app todavía no incluye galería de imágenes,
-            horario, requisitos ni materiales de esta actividad.
+            La API pública aún no ofrece el horario, requisitos ni materiales de esta actividad.
           </Text>
         </View>
       </View>

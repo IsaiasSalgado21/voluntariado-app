@@ -1,10 +1,12 @@
 import type { VolunteerFilters } from "./filters";
-import { fetchApiJson } from "../api-client.ts";
+import { fetchApiJson, resolveApiAssetUrl } from "../api-client.ts";
 
 export type VolunteerMapItem = {
   id: string;
   titulo: string;
   descripcion: string;
+  imagen: string | null;
+  imagenes: string[];
   categoria: string | null;
   fecha_inicio: string | null;
   lugar_id: string;
@@ -81,6 +83,17 @@ export function parseVolunteerMapItems(data: unknown): VolunteerMapItem[] {
       id: value.id,
       titulo: value.titulo,
       descripcion: value.descripcion,
+      imagen: resolveApiAssetUrl(typeof value.imagen === "string"
+        ? value.imagen
+        : Array.isArray(value.imagenes) && typeof value.imagenes[0] === "string"
+          ? value.imagenes[0]
+          : null),
+      imagenes: Array.isArray(value.imagenes)
+        ? value.imagenes
+          .filter((image): image is string => typeof image === "string")
+          .map((image) => resolveApiAssetUrl(image))
+          .filter((image): image is string => image !== null)
+        : [],
       categoria: typeof value.categoria === "string" ? value.categoria : null,
       fecha_inicio: typeof value.fecha_inicio === "string" ? value.fecha_inicio : null,
       lugar_id: typeof value.lugar_id === "string" ? value.lugar_id : "",

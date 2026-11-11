@@ -5,6 +5,7 @@ import {
   parsePlaces,
   parseVolunteerMapItems,
 } from "../src/features/voluntariados/api.ts";
+import { resolveApiAssetUrl } from "../src/features/api-client.ts";
 import {
   filterVoluntariados,
   isValidIsoDate,
@@ -73,6 +74,27 @@ test("validates real ISO dates and date order", () => {
 test("rejects malformed public API records instead of fabricating defaults", () => {
   assert.throws(() => parseVolunteerMapItems([{ id: "missing-fields" }]), /formato inesperado/);
   assert.deepEqual(parseVolunteerMapItems([]), []);
+});
+
+test("parses volunteer image galleries and resolves local API image hosts", () => {
+  const originalUrl = process.env.EXPO_PUBLIC_REGENERA_API_URL;
+  process.env.EXPO_PUBLIC_REGENERA_API_URL = "http://192.168.1.221:8001";
+  try {
+    const [item] = parseVolunteerMapItems([{
+      ...sample[0],
+      imagen: "http://127.0.0.1:8000/api/imagen/voluntariados/foto.jpg",
+      imagenes: ["/api/imagen/voluntariados/foto.jpg", "https://cdn.example.test/otra.jpg"],
+    }]);
+    assert.equal(item.imagen, "http://192.168.1.221:8001/api/imagen/voluntariados/foto.jpg");
+    assert.deepEqual(item.imagenes, [
+      "http://192.168.1.221:8001/api/imagen/voluntariados/foto.jpg",
+      "https://cdn.example.test/otra.jpg",
+    ]);
+    assert.equal(resolveApiAssetUrl(null), null);
+  } finally {
+    if (originalUrl === undefined) delete process.env.EXPO_PUBLIC_REGENERA_API_URL;
+    else process.env.EXPO_PUBLIC_REGENERA_API_URL = originalUrl;
+  }
 });
 
 test("parses real place descriptions, categories, images, and map coordinates", () => {

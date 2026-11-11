@@ -23,6 +23,7 @@ import {
   validateDateRange,
   type VolunteerFilters,
 } from "@/features/voluntariados/filters";
+import { VolunteerPhoto } from "@/features/voluntariados/volunteer-photo";
 
 const CATEGORIES = [
   ["", "Todos"],
@@ -44,6 +45,7 @@ export default function VolunteerListScreen() {
   const [filters, setFilters] = useState<VolunteerFilters>({});
   const [draftFilters, setDraftFilters] = useState<VolunteerFilters>({});
   const [search, setSearch] = useState("");
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [placesError, setPlacesError] = useState<string | null>(null);
@@ -86,6 +88,22 @@ export default function VolunteerListScreen() {
     () => filterVoluntariados(items, search),
     [items, search],
   );
+  const activeFilterLabels = [
+    filters.categoria
+      ? CATEGORIES.find(([value]) => value === filters.categoria)?.[1] ?? filters.categoria
+      : null,
+    filters.lugar_id
+      ? places.find((place) => place.id === filters.lugar_id)?.nombre ?? "Lugar"
+      : null,
+    filters.fecha_desde || filters.fecha_hasta
+      ? [filters.fecha_desde, filters.fecha_hasta].filter(Boolean).join(" – ")
+      : null,
+    filters.disponibles === undefined
+      ? null
+      : filters.disponibles
+        ? "Con lugares"
+        : "Cupo lleno",
+  ].filter((label): label is string => label !== null);
 
   const updateDraft = <K extends keyof VolunteerFilters>(
     key: K,
@@ -101,6 +119,7 @@ export default function VolunteerListScreen() {
 
     setFilterError(null);
     setFilters({ ...draftFilters });
+    setFiltersExpanded(false);
   };
 
   const clearFilters = () => {
@@ -108,6 +127,7 @@ export default function VolunteerListScreen() {
     setFilters({});
     setSearch("");
     setFilterError(null);
+    setFiltersExpanded(false);
   };
 
   const renderChoice = (key: string, label: string, selected: boolean, onPress: () => void) => (
@@ -152,84 +172,106 @@ export default function VolunteerListScreen() {
         returnKeyType="search"
       />
 
-      <Text style={[styles.sectionLabel, { color: colors.text }]}>Categoría</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choices}>
-        {CATEGORIES.map(([value, label]) =>
-          renderChoice(`category-${value || "all"}`, label, (draftFilters.categoria ?? "") === value, () =>
-            updateDraft("categoria", value || undefined),
-          ),
+      <View style={[styles.filterSection, { backgroundColor: colors.backgroundElement }]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ expanded: filtersExpanded }}
+          onPress={() => setFiltersExpanded((expanded) => !expanded)}
+          style={styles.filterHeader}
+        >
+          <View style={styles.filterHeading}>
+            <Text style={[styles.filterTitle, { color: colors.text }]}>
+              Filtros{activeFilterLabels.length > 0 ? ` · ${activeFilterLabels.length}` : ""}
+            </Text>
+            <Text numberOfLines={1} style={[styles.filterSummary, { color: colors.textSecondary }]}>
+              {activeFilterLabels.length > 0 ? activeFilterLabels.join(" · ") : "Categoría, lugar, fecha y cupo"}
+            </Text>
+          </View>
+          <Text style={styles.filterToggle}>{filtersExpanded ? "Ocultar ▲" : "Mostrar ▼"}</Text>
+        </Pressable>
+
+        {filtersExpanded && (
+          <View style={styles.filterPanel}>
+            <Text style={[styles.sectionLabel, { color: colors.text }]}>Categoría</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choices}>
+              {CATEGORIES.map(([value, label]) =>
+                renderChoice(`category-${value || "all"}`, label, (draftFilters.categoria ?? "") === value, () =>
+                  updateDraft("categoria", value || undefined),
+                ),
+              )}
+            </ScrollView>
+
+            <Text style={[styles.sectionLabel, { color: colors.text }]}>Lugar</Text>
+            {placesError ? (
+              <Text style={styles.inlineError}>{placesError}</Text>
+            ) : places.length === 0 ? (
+              <Text style={[styles.helper, { color: colors.textSecondary }]}>Cargando lugares…</Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choices}>
+                {renderChoice("place-all", "Todos", !draftFilters.lugar_id, () => updateDraft("lugar_id", undefined))}
+                {places.map((place) =>
+                  renderChoice(`place-${place.id}`, place.nombre, draftFilters.lugar_id === place.id, () =>
+                    updateDraft("lugar_id", place.id),
+                  ),
+                )}
+              </ScrollView>
+            )}
+
+            <View style={styles.dateRow}>
+              <View style={styles.dateField}>
+                <Text style={[styles.sectionLabel, { color: colors.text }]}>Desde</Text>
+                <TextInput
+                  accessibilityLabel="Fecha desde, formato año-mes-día"
+                  placeholder="AAAA-MM-DD"
+                  placeholderTextColor={colors.textSecondary}
+                  value={draftFilters.fecha_desde ?? ""}
+                  onChangeText={(value) => updateDraft("fecha_desde", value || undefined)}
+                  style={[styles.dateInput, { color: colors.text, backgroundColor: colors.background }]}
+                  maxLength={10}
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
+              <View style={styles.dateField}>
+                <Text style={[styles.sectionLabel, { color: colors.text }]}>Hasta</Text>
+                <TextInput
+                  accessibilityLabel="Fecha hasta, formato año-mes-día"
+                  placeholder="AAAA-MM-DD"
+                  placeholderTextColor={colors.textSecondary}
+                  value={draftFilters.fecha_hasta ?? ""}
+                  onChangeText={(value) => updateDraft("fecha_hasta", value || undefined)}
+                  style={[styles.dateInput, { color: colors.text, backgroundColor: colors.background }]}
+                  maxLength={10}
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
+            </View>
+
+            <View style={styles.availabilityRow}>
+              <Text style={[styles.sectionLabel, { color: colors.text }]}>Cupo</Text>
+              <View style={styles.choices}>
+                {renderChoice("capacity-all", "Todos", draftFilters.disponibles === undefined, () =>
+                  updateDraft("disponibles", undefined),
+                )}
+                {renderChoice("capacity-open", "Con lugares", draftFilters.disponibles === true, () =>
+                  updateDraft("disponibles", true),
+                )}
+                {renderChoice("capacity-full", "Llenos", draftFilters.disponibles === false, () =>
+                  updateDraft("disponibles", false),
+                )}
+              </View>
+            </View>
+
+            {filterError && <Text style={styles.inlineError}>{filterError}</Text>}
+            <View style={styles.actions}>
+              <Pressable accessibilityRole="button" onPress={applyFilters} style={styles.primaryButton}>
+                <Text style={styles.primaryButtonText}>Aplicar filtros</Text>
+              </Pressable>
+              <Pressable accessibilityRole="button" onPress={clearFilters} style={styles.secondaryButton}>
+                <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Limpiar</Text>
+              </Pressable>
+            </View>
+          </View>
         )}
-      </ScrollView>
-
-      <Text style={[styles.sectionLabel, { color: colors.text }]}>Lugar</Text>
-      {placesError ? (
-        <Text style={styles.inlineError}>{placesError}</Text>
-      ) : places.length === 0 ? (
-        <Text style={[styles.helper, { color: colors.textSecondary }]}>Cargando lugares…</Text>
-      ) : (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choices}>
-          {renderChoice("place-all", "Todos", !draftFilters.lugar_id, () => updateDraft("lugar_id", undefined))}
-          {places.map((place) =>
-            renderChoice(`place-${place.id}`, place.nombre, draftFilters.lugar_id === place.id, () =>
-              updateDraft("lugar_id", place.id),
-            ),
-          )}
-        </ScrollView>
-      )}
-
-      <View style={styles.dateRow}>
-        <View style={styles.dateField}>
-          <Text style={[styles.sectionLabel, { color: colors.text }]}>Desde</Text>
-          <TextInput
-            accessibilityLabel="Fecha desde, formato año-mes-día"
-            placeholder="AAAA-MM-DD"
-            placeholderTextColor={colors.textSecondary}
-            value={draftFilters.fecha_desde ?? ""}
-            onChangeText={(value) => updateDraft("fecha_desde", value || undefined)}
-            style={[styles.dateInput, { color: colors.text, backgroundColor: colors.backgroundElement }]}
-            maxLength={10}
-            keyboardType="numbers-and-punctuation"
-          />
-        </View>
-        <View style={styles.dateField}>
-          <Text style={[styles.sectionLabel, { color: colors.text }]}>Hasta</Text>
-          <TextInput
-            accessibilityLabel="Fecha hasta, formato año-mes-día"
-            placeholder="AAAA-MM-DD"
-            placeholderTextColor={colors.textSecondary}
-            value={draftFilters.fecha_hasta ?? ""}
-            onChangeText={(value) => updateDraft("fecha_hasta", value || undefined)}
-            style={[styles.dateInput, { color: colors.text, backgroundColor: colors.backgroundElement }]}
-            maxLength={10}
-            keyboardType="numbers-and-punctuation"
-          />
-        </View>
-      </View>
-
-      <View style={styles.availabilityRow}>
-        <Text style={[styles.sectionLabel, { color: colors.text }]}>Cupo</Text>
-        <View style={styles.choices}>
-          {renderChoice("capacity-all", "Todos", draftFilters.disponibles === undefined, () =>
-            updateDraft("disponibles", undefined),
-          )}
-          {renderChoice("capacity-open", "Con lugares", draftFilters.disponibles === true, () =>
-            updateDraft("disponibles", true),
-          )}
-          {renderChoice("capacity-full", "Llenos", draftFilters.disponibles === false, () =>
-            updateDraft("disponibles", false),
-          )}
-        </View>
-      </View>
-
-      {filterError && <Text style={styles.inlineError}>{filterError}</Text>}
-
-      <View style={styles.actions}>
-        <Pressable accessibilityRole="button" onPress={applyFilters} style={styles.primaryButton}>
-          <Text style={styles.primaryButtonText}>Aplicar filtros</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" onPress={clearFilters} style={styles.secondaryButton}>
-          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Limpiar</Text>
-        </Pressable>
       </View>
 
       <View style={styles.resultsHeading}>
@@ -276,6 +318,11 @@ export default function VolunteerListScreen() {
                 { backgroundColor: colors.backgroundElement, opacity: pressed ? 0.86 : 1 },
               ]}
             >
+              <VolunteerPhoto
+                uri={item.imagen ?? item.imagenes[0] ?? null}
+                title={item.titulo}
+                variant="card"
+              />
               <View style={styles.cardTopRow}>
                 <Text style={styles.categoryBadge}>{item.categoria || "Actividad ambiental"}</Text>
                 <Text style={[styles.capacity, { color: item.lleno ? "#A14537" : "#286447" }]}>
@@ -321,6 +368,13 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: "800" },
   subtitle: { fontSize: 15, lineHeight: 21, marginBottom: 4 },
   searchInput: { borderRadius: 14, paddingHorizontal: 15, paddingVertical: 13, fontSize: 15 },
+  filterSection: { borderRadius: 15, paddingHorizontal: 14, paddingVertical: 11 },
+  filterHeader: { minHeight: 40, flexDirection: "row", alignItems: "center", gap: 12 },
+  filterHeading: { flex: 1, gap: 2 },
+  filterTitle: { fontSize: 14, fontWeight: "800" },
+  filterSummary: { fontSize: 12 },
+  filterToggle: { color: "#164F3D", fontSize: 12, fontWeight: "800" },
+  filterPanel: { gap: 10, paddingTop: 10 },
   sectionLabel: { fontSize: 14, fontWeight: "700", marginTop: 4 },
   choices: { flexDirection: "row", alignItems: "center", gap: 8, paddingRight: 8 },
   choice: { paddingHorizontal: 13, paddingVertical: 9, borderRadius: 18 },
@@ -339,7 +393,7 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 20, fontWeight: "800" },
   refreshText: { color: "#164F3D", fontWeight: "700" },
   list: { gap: 12 },
-  card: { padding: 16, borderRadius: 18, gap: 9 },
+  card: { padding: 12, borderRadius: 18, gap: 9, overflow: "hidden" },
   cardTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   categoryBadge: { color: "#164F3D", backgroundColor: "#DCE8DF", borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5, fontSize: 11, fontWeight: "700", overflow: "hidden" },
   capacity: { fontSize: 12, fontWeight: "700" },

@@ -9,6 +9,23 @@ function apiBaseUrl(): string {
   return configured.replace(/\/+$/, "");
 }
 
+export function resolveApiAssetUrl(value: string | null | undefined): string | null {
+  const assetUrl = value?.trim();
+  if (!assetUrl) return null;
+
+  try {
+    const base = new URL(apiBaseUrl());
+    const resolved = new URL(assetUrl, base);
+    if (["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(resolved.hostname)) {
+      resolved.protocol = base.protocol;
+      resolved.host = base.host;
+    }
+    return resolved.toString();
+  } catch {
+    return null;
+  }
+}
+
 export class ApiRequestError extends Error {
   readonly status: number;
 
