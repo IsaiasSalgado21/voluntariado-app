@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,13 +18,17 @@ import { useSession } from "@/features/auth/use-session";
 import {
   createManagedVolunteer,
   fetchAdminOrganizers,
+  fetchManagedPlaceOptions,
   fetchManagedVolunteers,
+  fetchVolunteerCategoryOptions,
+  normalizeCategory,
   updateManagedVolunteer,
+  type ManagedPlaceOption,
   type OrganizerOption,
+  type VolunteerCategoryOption,
   type VolunteerFormValues,
 } from "@/features/organizador/api";
 import { formatDateValue, parseDateValue, parseTimeValue } from "@/features/organizador/date";
-import { fetchPlaces, type PlaceOption } from "@/features/voluntariados/api";
 
 type DateField = "fechaInicio" | "fechaFin" | "horaInicio" | "horaFin";
 type FormState = {
@@ -62,26 +67,34 @@ export default function ManagedVolunteerEditorScreen() {
   const volunteerId = Array.isArray(id) ? id[0] : id;
   const { status, token, user } = useSession();
   const [form, setForm] = useState<FormState>(DEFAULT_FORM);
-  const [places, setPlaces] = useState<PlaceOption[]>([]);
+  const [places, setPlaces] = useState<ManagedPlaceOption[]>([]);
+  const [categories, setCategories] = useState<VolunteerCategoryOption[]>([]);
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [organizers, setOrganizers] = useState<OrganizerOption[]>([]);
   const [organizerId, setOrganizerId] = useState("");
   const [picker, setPicker] = useState<{ field: DateField; mode: "date" | "time" } | null>(null);
-  const [loading, setLoading] = useState(Boolean(volunteerId));
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
+    setLoading(true);
     void Promise.resolve().then(async () => {
-      if (status !== "authenticated" || !token) return;
+      if (status !== "authenticated" || !token) {
+        setLoading(false);
+        return;
+      }
       try {
-        const [availablePlaces, ownedActivities] = await Promise.all([
-          fetchPlaces(controller.signal),
+        const [availablePlaces, ownedActivities, availableCategories] = await Promise.all([
+          fetchManagedPlaceOptions(token, controller.signal),
           fetchManagedVolunteers(token, controller.signal),
+          fetchVolunteerCategoryOptions(controller.signal),
         ]);
         if (!active) return;
         setPlaces(availablePlaces);
+        setCategories(availableCategories);
         if (!volunteerId) {
           setForm((current) => ({ ...current, lugarId: availablePlaces[0]?.id ?? "" }));
         } else {
@@ -103,6 +116,7 @@ export default function ManagedVolunteerEditorScreen() {
             requisitos: activity.requisitos.join("\n"),
             materiales: activity.materiales.join("\n"),
           });
+          setIsCustomCategory(!availableCategories.some((category) => category.value === activity.categoria));
         }
         if (user?.rol === "admin") {
           const options = await fetchAdminOrganizers(token, controller.signal);
@@ -135,9 +149,11 @@ export default function ManagedVolunteerEditorScreen() {
     setForm((current) => ({ ...current, [field]: value }));
   };
 
-  const onDateChange = (_event: DateTimePickerEvent, value?: Date) => {
+  const onDateChange = (event: DateTimePickerEvent, value?: Date) => {
     if (value && picker) setForm((current) => ({ ...current, [picker.field]: value }));
-    setPicker(null);
+    if (event.type !== "set" || (Platform.OS !== "ios" && Platform.OS !== "web")) {
+      setPicker(null);
+    }
   };
 
   const save = async () => {
@@ -147,13 +163,24 @@ export default function ManagedVolunteerEditorScreen() {
       setError("Completa título, descripción, categoría y lugar.");
       return;
     }
+    const categoria = isCustomCategory ? normalizeCategory(form.categoria) : form.categoria.trim();
+    if (!categoria) {
+      setError("Escribe una categoría válida.");
+      return;
+    }
+    const fechaInicio = formatDateValue(form.fechaInicio);
+    const fechaFin = formatDateValue(form.fechaFin);
+    if (fechaFin < fechaInicio || toTime(form.horaFin) <= toTime(form.horaInicio)) {
+      setError("La fecha y hora de fin deben ser posteriores al inicio.");
+      return;
+    }
     const payload: VolunteerFormValues = {
       titulo: form.titulo.trim(),
       descripcion: form.descripcion.trim(),
-      categoria: form.categoria.trim(),
+      categoria,
       lugarId: form.lugarId,
-      fechaInicio: formatDateValue(form.fechaInicio),
-      fechaFin: formatDateValue(form.fechaFin),
+      fechaInicio,
+      fechaFin,
       horaInicio: toTime(form.horaInicio),
       horaFin: toTime(form.horaFin),
       cupo: Number(form.cupo),
@@ -207,7 +234,40 @@ export default function ManagedVolunteerEditorScreen() {
         <View style={styles.form}>
           {field("Título", form.titulo, (value) => setText("titulo", value), colors.text, "Ej. Limpieza de playa")}
           {field("Descripción", form.descripcion, (value) => setText("descripcion", value), colors.text, "Describe la actividad", true)}
-          {field("Categoría", form.categoria, (value) => setText("categoria", value), colors.text, "Ej. limpieza, reforestación")}
+          <Text style={styles.label}>Categoría recomendada</Text>
+          <View style={styles.chipList}>
+            {categories.map((category) => (
+              <Pressable
+                key={category.value}
+                onPress={() => {
+                  setIsCustomCategory(false);
+                  setText("categoria", category.value);
+                }}
+                style={[styles.chip, !isCustomCategory && form.categoria === category.value && styles.selectedChip]}
+              >
+                <Text style={[styles.chipText, !isCustomCategory && form.categoria === category.value && styles.selectedChipText]}>
+                  {category.label}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable
+              onPress={() => {
+                setIsCustomCategory(true);
+                setText("categoria", "");
+              }}
+              style={[styles.chip, isCustomCategory && styles.selectedChip]}
+            >
+              <Text style={[styles.chipText, isCustomCategory && styles.selectedChipText]}>Otra categoría</Text>
+            </Pressable>
+          </View>
+          {isCustomCategory && field(
+            "Nombre de la nueva categoría",
+            form.categoria,
+            (value) => setText("categoria", value),
+            colors.text,
+            "Ej. Restauración de dunas",
+          )}
+          {isCustomCategory && <Text style={[styles.hint, { color: colors.textSecondary }]}>Después de guardar, aparecerá como categoría recomendada.</Text>}
 
           <Text style={styles.label}>Lugar</Text>
           <View style={styles.chipList}>
@@ -222,7 +282,7 @@ export default function ManagedVolunteerEditorScreen() {
                 </Text>
               </Pressable>
             ))}
-            {places.length === 0 && <Text style={[styles.hint, { color: colors.textSecondary }]}>No hay lugares activos disponibles.</Text>}
+            {places.length === 0 && <Text style={[styles.hint, { color: colors.textSecondary }]}>No hay lugares disponibles para tu cuenta.</Text>}
           </View>
           {selectedPlace && <Text style={[styles.hint, { color: colors.textSecondary }]}>{selectedPlace.descripcion}</Text>}
 

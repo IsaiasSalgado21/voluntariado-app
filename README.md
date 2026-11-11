@@ -75,6 +75,16 @@ archive flora/fauna and places, and inspect audit entries. The API remains the
 authority for authorization, ownership, activity status, enrollment, and
 attendance time-window checks.
 
+Organizers and admins can report a completed activity's environmental impact
+from its management dashboard. The public activity detail shows its totals, and
+the `/impacto` screen shows accumulated results across activities. Impact data
+uses the public `GET /api/voluntariados/{id}/impactos` and
+`GET /api/impactos/resumen` endpoints; reporting uses the authenticated
+`POST /api/admin/voluntariados/{id}/impactos` endpoint. The API enforces the
+activity owner, completion time, metric units, and amount validation.
+Activity detail and organizer views include a per-metric bar chart of the six
+most recent reports; each unit uses its own scale.
+
 The attendance QR scanner requests camera access on iOS and Android. A
 development build must be rebuilt after adding the `expo-camera` config plugin;
 Expo Go uses the native camera module already included in Expo Go. Native

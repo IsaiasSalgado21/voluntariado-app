@@ -30,6 +30,18 @@ export type OrganizerOption = {
   correo: string;
 };
 
+export type ManagedPlaceOption = {
+  id: string;
+  nombre: string;
+  municipio: string;
+  descripcion: string;
+};
+
+export type VolunteerCategoryOption = {
+  value: string;
+  label: string;
+};
+
 export type VolunteerDashboard = {
   volunteer: ManagedVolunteer & { lugar: { nombre: string; municipio: string; direccion: string | null } | null };
   statistics: {
@@ -69,8 +81,8 @@ function asNumber(value: unknown, field: string): number {
   return value;
 }
 
-function parseManagedVolunteer(value: unknown): ManagedVolunteer {
-  if (!isRecord(value) || typeof value.cupo !== "number" || typeof value.codigoAsistenciaActivo !== "boolean") {
+export function parseManagedVolunteer(value: unknown): ManagedVolunteer {
+  if (!isRecord(value) || typeof value.cupo !== "number") {
     throw new Error("La respuesta de voluntariado administrado no tiene el formato esperado.");
   }
   const stringArray = (input: unknown) => Array.isArray(input)
@@ -92,7 +104,9 @@ function parseManagedVolunteer(value: unknown): ManagedVolunteer {
     materiales: stringArray(value.materiales),
     estado: asString(value.estado, "estado"),
     tokenAsistencia: typeof value.tokenAsistencia === "string" ? value.tokenAsistencia : null,
-    codigoAsistenciaActivo: value.codigoAsistenciaActivo,
+    codigoAsistenciaActivo: typeof value.codigoAsistenciaActivo === "boolean"
+      ? value.codigoAsistenciaActivo
+      : true,
   };
 }
 
@@ -105,6 +119,67 @@ export function parseManagedVolunteerList(value: unknown): ManagedVolunteer[] {
 
 export async function fetchManagedVolunteers(token: string, signal?: AbortSignal): Promise<ManagedVolunteer[]> {
   return parseManagedVolunteerList(await requestApiJson("/api/admin/voluntariados", { token, signal }));
+}
+
+export async function fetchManagedPlaceOptions(token: string, signal?: AbortSignal): Promise<ManagedPlaceOption[]> {
+  return parseManagedPlaceOptions(await requestApiJson("/api/lugares", { token, signal }));
+}
+
+export function parseManagedPlaceOptions(result: unknown): ManagedPlaceOption[] {
+  if (!isRecord(result)) throw new Error("La lista de lugares no tiene el formato esperado.");
+  const places = Array.isArray(result.data) ? result.data : result.lugares;
+  if (!Array.isArray(places)) throw new Error("La lista de lugares no tiene el formato esperado.");
+  return places.map((place, index) => {
+    if (!isRecord(place)) throw new Error(`El lugar ${index + 1} tiene un formato inesperado.`);
+    const id = place.id ?? place._id ?? place.lugares_id;
+    if (typeof id !== "string" && typeof id !== "number") {
+      throw new Error(`El lugar ${index + 1} no contiene un identificador válido.`);
+    }
+    if (typeof place.nombre !== "string") {
+      throw new Error(`El lugar ${index + 1} no contiene un nombre válido.`);
+    }
+    return {
+      id: String(id),
+      nombre: place.nombre,
+      municipio: typeof place.municipio === "string" ? place.municipio : "",
+      descripcion: typeof place.descripcion === "string" ? place.descripcion : "",
+    };
+  });
+}
+
+export async function fetchVolunteerCategoryOptions(signal?: AbortSignal): Promise<VolunteerCategoryOption[]> {
+  return parseVolunteerCategoryOptions(await requestApiJson("/api/voluntariados/categorias", { signal }));
+}
+
+export function parseVolunteerCategoryOptions(result: unknown): VolunteerCategoryOption[] {
+  if (!isRecord(result) || !Array.isArray(result.categorias)) {
+    throw new Error("La lista de categorías no tiene el formato esperado.");
+  }
+  return result.categorias.map((category, index) => {
+    if (typeof category !== "string" || category.trim() === "") {
+      throw new Error(`La categoría ${index + 1} tiene un formato inesperado.`);
+    }
+    return { value: category, label: formatCategoryLabel(category) };
+  });
+}
+
+export function normalizeCategory(value: string): string {
+  return value.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 100);
+}
+
+function formatCategoryLabel(value: string): string {
+  const labels: Record<string, string> = {
+    "limpieza-de-playas": "Limpieza de playas",
+    limpieza: "Limpieza",
+    reforestacion: "Reforestación",
+    restauracion: "Restauración",
+    conservacion: "Conservación",
+    monitoreo: "Monitoreo",
+    "educacion-ambiental": "Educación ambiental",
+  };
+  return labels[value.toLocaleLowerCase()] ?? value.replace(/[-_]/g, " ")
+    .replace(/\b\p{L}/gu, (letter) => letter.toLocaleUpperCase());
 }
 
 export async function fetchAdminOrganizers(token: string, signal?: AbortSignal): Promise<OrganizerOption[]> {

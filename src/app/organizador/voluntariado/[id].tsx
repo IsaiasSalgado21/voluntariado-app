@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,6 +22,13 @@ import {
   registerManualAttendance,
   updateAttendanceCode,
 } from "@/features/asistencia/api";
+import {
+  createVolunteerImpact,
+  fetchVolunteerImpact,
+  type VolunteerImpactSummary,
+} from "@/features/impacto/api";
+import { ImpactMetricsChart } from "@/features/impacto/impact-metrics-chart";
+import { hasVolunteerEnded } from "@/features/impacto/schedule";
 
 type Palette = typeof Colors.light | typeof Colors.dark;
 
@@ -36,6 +44,38 @@ export default function ManagedVolunteerDashboardScreen() {
   const [error, setError] = useState<string | null>(null);
   const [workingUserId, setWorkingUserId] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [impact, setImpact] = useState<VolunteerImpactSummary | null>(null);
+  const [impactError, setImpactError] = useState<string | null>(null);
+  const [impactMessage, setImpactMessage] = useState<string | null>(null);
+  const [selectedMetric, setSelectedMetric] = useState("");
+  const [impactAmount, setImpactAmount] = useState("");
+  const [impactNote, setImpactNote] = useState("");
+  const [impactWorking, setImpactWorking] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    setImpactError(null);
+    void fetchVolunteerImpact(volunteerId, controller.signal)
+      .then((result) => {
+        if (active) {
+          setImpact(result);
+          setImpactError(null);
+          setSelectedMetric((current) => result.catalogo.some((metric) => metric.tipo === current)
+            ? current
+            : result.catalogo[0]?.tipo ?? "");
+        }
+      })
+      .catch((cause: unknown) => {
+        if (active && !controller.signal.aborted) {
+          setImpactError(cause instanceof Error ? cause.message : "No se pudo cargar el impacto.");
+        }
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [volunteerId, refreshKey]);
 
   useEffect(() => {
     let active = true;
@@ -99,6 +139,47 @@ export default function ManagedVolunteerDashboardScreen() {
       setWorkingUserId(null);
     }
   };
+
+  const registerImpact = async () => {
+    if (!token || !selectedMetric) return;
+    const normalizedAmount = impactAmount.trim().replace(",", ".");
+    if (!/^\d+(?:\.\d{1,2})?$/.test(normalizedAmount)) {
+      setImpactError("Ingresa una cantidad positiva con máximo dos decimales.");
+      return;
+    }
+    const amount = Number(normalizedAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setImpactError("Ingresa una cantidad mayor que cero.");
+      return;
+    }
+
+    setImpactWorking(true);
+    setImpactError(null);
+    setImpactMessage(null);
+    try {
+      await createVolunteerImpact(token, volunteerId, {
+        tipo: selectedMetric,
+        cantidad: amount,
+        ...(impactNote.trim() ? { nota: impactNote.trim() } : {}),
+      });
+      setImpactAmount("");
+      setImpactNote("");
+      setImpactMessage("Impacto registrado correctamente.");
+      setRefreshKey((key) => key + 1);
+    } catch (cause) {
+      setImpactError(cause instanceof Error ? cause.message : "No se pudo registrar el impacto.");
+    } finally {
+      setImpactWorking(false);
+    }
+  };
+
+  const canRecordImpact = user?.rol === "organizador" || user?.rol === "admin";
+  const activityHasEnded = hasVolunteerEnded(
+    dashboard?.volunteer.fechaFin,
+    dashboard?.volunteer.horaFin,
+  );
+  const activityCanRecordImpact = activityHasEnded
+    && ["publicado", "finalizado"].includes(dashboard?.volunteer.estado ?? "");
 
   const goBack = () => router.canGoBack() ? router.back() : router.replace("/organizador/voluntariados");
 
@@ -176,6 +257,105 @@ export default function ManagedVolunteerDashboardScreen() {
             </View>
           )}
 
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Impacto de la actividad</Text>
+          <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+            {impactError && <Text accessibilityRole="alert" style={styles.error}>{impactError}</Text>}
+            {!impact && impactError && (
+              <Pressable onPress={() => setRefreshKey((key) => key + 1)} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Reintentar carga del impacto</Text>
+              </Pressable>
+            )}
+            {!impact ? (
+              !impactError && <Text style={[styles.muted, { color: colors.textSecondary }]}>Cargando impacto…</Text>
+            ) : impact.totales.length === 0 ? (
+              <Text style={[styles.muted, { color: colors.textSecondary }]}>Aún no se han registrado resultados para esta actividad.</Text>
+            ) : (
+              <ImpactMetricsChart
+                totals={impact.totales}
+                records={impact.registros}
+                textColor={colors.text}
+                secondaryTextColor={colors.textSecondary}
+                cardColor={colors.background}
+              />
+            )}
+            {!!impact?.registros.length && (
+              <View style={styles.list}>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>
+                  Registros recientes ({Math.min(5, impact.registros.length)} de {impact.registros.length})
+                </Text>
+                {impact.registros.slice(0, 5).map((record) => (
+                  <View key={record.id} style={styles.impactRecord}>
+                    <Text style={[styles.hint, { color: colors.textSecondary }]}>
+                      {record.etiqueta}: {formatAmount(record.cantidad)} {record.unidad}
+                      {record.registradoEn ? ` · ${formatImpactDate(record.registradoEn)}` : ""}
+                    </Text>
+                    {!!record.nota && (
+                      <Text style={[styles.hint, { color: colors.textSecondary }]}>{record.nota}</Text>
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+            {canRecordImpact && (
+              activityCanRecordImpact ? (
+                <>
+                  <Text style={[styles.hint, { color: colors.textSecondary }]}>
+                    Registra cada resultado con su unidad correspondiente. Los datos se agregarán al impacto acumulado.
+                  </Text>
+                  <View style={styles.metricOptions}>
+                    {impact?.catalogo.map((metric) => (
+                      <Pressable
+                        key={metric.tipo}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: selectedMetric === metric.tipo }}
+                        onPress={() => setSelectedMetric(metric.tipo)}
+                        style={[styles.metricOption, selectedMetric === metric.tipo && styles.metricOptionSelected]}
+                      >
+                        <Text style={[styles.metricOptionText, selectedMetric === metric.tipo && styles.metricOptionTextSelected]}>
+                          {metric.etiqueta} ({metric.unidad})
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <TextInput
+                    accessibilityLabel="Cantidad de impacto"
+                    keyboardType="decimal-pad"
+                    onChangeText={setImpactAmount}
+                    placeholder="Cantidad"
+                    placeholderTextColor="#718078"
+                    style={styles.impactInput}
+                    value={impactAmount}
+                  />
+                  <TextInput
+                    accessibilityLabel="Nota del impacto (opcional)"
+                    maxLength={500}
+                    multiline
+                    onChangeText={setImpactNote}
+                    placeholder="Nota opcional"
+                    placeholderTextColor="#718078"
+                    style={[styles.impactInput, styles.noteInput]}
+                    value={impactNote}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    disabled={impactWorking || !selectedMetric}
+                    onPress={() => void registerImpact()}
+                    style={[styles.primaryButton, (impactWorking || !selectedMetric) && styles.disabled]}
+                  >
+                    <Text style={styles.primaryButtonText}>{impactWorking ? "Guardando…" : "Registrar impacto"}</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <Text style={[styles.hint, { color: colors.textSecondary }]}>
+                  {["publicado", "finalizado"].includes(dashboard.volunteer.estado)
+                    ? "El registro estará disponible cuando concluya el horario de la actividad."
+                    : "Solo se puede registrar impacto en actividades publicadas o finalizadas."}
+                </Text>
+              )
+            )}
+            {impactMessage && <Text style={styles.successText}>{impactMessage}</Text>}
+          </View>
+
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Participantes</Text>
           {dashboard.participants.length === 0 ? (
             <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
@@ -225,6 +405,20 @@ export default function ManagedVolunteerDashboardScreen() {
   );
 }
 
+function formatAmount(value: number): string {
+  return new Intl.NumberFormat("es-MX", { maximumFractionDigits: 2 }).format(value);
+}
+
+function formatImpactDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "fecha no disponible";
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/Mazatlan",
+  }).format(date);
+}
+
 function Stat({
   label,
   value,
@@ -257,6 +451,15 @@ const styles = StyleSheet.create({
   card: { padding: 16, borderRadius: 18, gap: 9 },
   list: { gap: 10 },
   cardTitle: { fontSize: 16, fontWeight: "800" },
+  impactRecord: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#B7C7BE", paddingTop: 8, gap: 3 },
+  impactAmount: { color: "#164F3D", fontSize: 21, fontWeight: "800" },
+  metricOptions: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  metricOption: { borderWidth: 1, borderColor: "#B7C7BE", borderRadius: 14, paddingHorizontal: 10, paddingVertical: 7 },
+  metricOptionSelected: { backgroundColor: "#164F3D", borderColor: "#164F3D" },
+  metricOptionText: { color: "#34483E", fontSize: 12, fontWeight: "600" },
+  metricOptionTextSelected: { color: "#FFFFFF" },
+  impactInput: { minHeight: 44, borderWidth: 1, borderColor: "#B7C7BE", borderRadius: 12, paddingHorizontal: 12, color: "#20332B", backgroundColor: "#FFFFFF" },
+  noteInput: { minHeight: 72, textAlignVertical: "top", paddingTop: 10 },
   muted: { fontSize: 14, lineHeight: 21 },
   hint: { fontSize: 12, lineHeight: 18 },
   qrContainer: { alignSelf: "center", padding: 14, backgroundColor: "#FFFFFF", borderRadius: 14 },

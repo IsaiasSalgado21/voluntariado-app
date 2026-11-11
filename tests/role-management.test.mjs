@@ -2,8 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createManagedVolunteer,
+  fetchManagedPlaceOptions,
   fetchManagedVolunteers,
+  normalizeCategory,
+  parseManagedPlaceOptions,
   fetchVolunteerDashboard,
+  parseVolunteerCategoryOptions,
+  parseManagedVolunteer,
   parseManagedVolunteerList,
   updateManagedVolunteer,
 } from "../src/features/organizador/api.ts";
@@ -84,6 +89,7 @@ function installFetch(handler) {
 }
 
 test("parses managed activities and organizer dashboard summaries", async () => {
+  const { codigoAsistenciaActivo: _legacyQrState, ...legacyVolunteer } = volunteer;
   const participant = {
     id: "enrollment-1",
     usuarioId: "user-1",
@@ -94,7 +100,7 @@ test("parses managed activities and organizer dashboard summaries", async () => 
   };
   const sampleDashboard = {
     data: {
-      voluntariado: { ...volunteer, lugar: { nombre: "Playa", municipio: "La Paz", direccion: null } },
+      voluntariado: { ...legacyVolunteer, lugar: { nombre: "Playa", municipio: "La Paz", direccion: null } },
       estadisticas: {
         inscritos: 1,
         cupo: 20,
@@ -110,16 +116,19 @@ test("parses managed activities and organizer dashboard summaries", async () => 
     },
   };
   assert.equal(parseManagedVolunteerList({ data: [volunteer] })[0].estado, "publicado");
+  assert.equal(parseManagedVolunteer(legacyVolunteer).codigoAsistenciaActivo, true);
+  assert.equal(parseManagedVolunteerList({ data: [legacyVolunteer] })[0].id, "volunteer-1");
   assert.throws(() => parseManagedVolunteerList({ data: [{ id: "bad" }] }), /formato esperado/);
 
   const mock = installFetch((request) => request.url.includes("/dashboard")
     ? sampleDashboard
     : request.method === "POST" || request.method === "PUT"
       ? { data: volunteer }
-      : { data: [volunteer] });
+      : { data: [legacyVolunteer] });
   try {
     assert.equal((await fetchManagedVolunteers("bearer"))[0].id, "volunteer-1");
     const dashboard = await fetchVolunteerDashboard("bearer", "volunteer-1");
+    assert.equal(dashboard.volunteer.codigoAsistenciaActivo, true);
     assert.equal(dashboard.statistics.inscritos, 1);
     assert.equal(dashboard.participants[0].usuarioId, "user-1");
     assert.equal((await createManagedVolunteer("bearer", volunteer)).id, "volunteer-1");
@@ -131,6 +140,48 @@ test("parses managed activities and organizer dashboard summaries", async () => 
   } finally {
     mock.restore();
   }
+});
+
+test("parses manager place options without requiring map coordinates", () => {
+  assert.deepEqual(parseManagedPlaceOptions({
+    data: [
+      { id: "place-1", nombre: "Playa local", municipio: "La Paz", descripcion: "Zona de limpieza" },
+      { _id: "place-2", nombre: "Parque sin coordenadas", estado: "pendiente" },
+    ],
+  }), [
+    { id: "place-1", nombre: "Playa local", municipio: "La Paz", descripcion: "Zona de limpieza" },
+    { id: "place-2", nombre: "Parque sin coordenadas", municipio: "", descripcion: "" },
+  ]);
+  assert.throws(() => parseManagedPlaceOptions({ data: [{ nombre: "Sin id" }] }), /identificador válido/);
+});
+
+test("requests organizer place options with the authenticated token", async () => {
+  const mock = installFetch(() => ({
+    data: [{ id: "owned-place", nombre: "Lugar propio", municipio: "La Paz" }],
+  }));
+  try {
+    const places = await fetchManagedPlaceOptions("organizer-token");
+    assert.equal(places[0].id, "owned-place");
+    assert.equal(mock.requests[0].url, "https://api.example.test/api/lugares");
+    assert.equal(mock.requests[0].headers.get("Authorization"), "Bearer organizer-token");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("provides recommended and previously used categories, and normalizes new names", () => {
+  const categories = parseVolunteerCategoryOptions({
+    success: true,
+    categorias: ["limpieza-de-playas", "reforestacion", "restauracion-de-dunas"],
+  });
+  assert.deepEqual(categories.map(({ value }) => value), [
+    "limpieza-de-playas",
+    "reforestacion",
+    "restauracion-de-dunas",
+  ]);
+  assert.equal(categories[0].label, "Limpieza de playas");
+  assert.equal(normalizeCategory("  Restauración de dunas "), "restauracion-de-dunas");
+  assert.throws(() => parseVolunteerCategoryOptions({ categorias: [null] }), /formato inesperado/);
 });
 
 test("uses admin user, moderation, and audit contracts", async () => {

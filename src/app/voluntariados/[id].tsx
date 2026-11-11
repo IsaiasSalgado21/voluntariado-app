@@ -27,6 +27,8 @@ import {
   type PlaceOption,
   type VolunteerMapItem,
 } from "@/features/voluntariados/api";
+import { fetchVolunteerImpact, type VolunteerImpactSummary } from "@/features/impacto/api";
+import { ImpactMetricsChart } from "@/features/impacto/impact-metrics-chart";
 
 export default function VolunteerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -46,6 +48,10 @@ export default function VolunteerDetailScreen() {
   const [enrollmentWorking, setEnrollmentWorking] = useState(false);
   const [enrollmentError, setEnrollmentError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [impact, setImpact] = useState<VolunteerImpactSummary | null>(null);
+  const [impactLoading, setImpactLoading] = useState(true);
+  const [impactError, setImpactError] = useState<string | null>(null);
+  const [impactRefresh, setImpactRefresh] = useState(0);
 
   const canEnroll = Boolean(
     token
@@ -145,6 +151,29 @@ export default function VolunteerDetailScreen() {
       controller.abort();
     };
   }, [volunteerId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    setImpactLoading(true);
+    setImpactError(null);
+    void fetchVolunteerImpact(volunteerId, controller.signal)
+      .then((result) => {
+        if (active) setImpact(result);
+      })
+      .catch((cause: unknown) => {
+        if (active && !controller.signal.aborted) {
+          setImpactError(cause instanceof Error ? cause.message : "No se pudo cargar el impacto de la actividad.");
+        }
+      })
+      .finally(() => {
+        if (active && !controller.signal.aborted) setImpactLoading(false);
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [volunteerId, impactRefresh]);
 
   const goBack = () => {
     if (router.canGoBack()) router.back();
@@ -324,6 +353,53 @@ export default function VolunteerDetailScreen() {
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Impacto de esta actividad</Text>
+          {impactLoading ? (
+            <ActivityIndicator color="#164F3D" />
+          ) : impactError ? (
+            <>
+              <Text accessibilityRole="alert" style={styles.errorText}>{impactError}</Text>
+              <Pressable onPress={() => setImpactRefresh((key) => key + 1)} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Reintentar</Text>
+              </Pressable>
+            </>
+          ) : !impact?.totales.length ? (
+            <Text style={[styles.description, { color: colors.textSecondary }]}>
+              Aún no se han reportado resultados. El impacto se actualizará cuando concluya la actividad.
+            </Text>
+          ) : (
+            <>
+              <ImpactMetricsChart
+                totals={impact.totales}
+                records={impact.registros}
+                textColor={colors.text}
+                secondaryTextColor={colors.textSecondary}
+                cardColor={colors.background}
+              />
+              {!!impact.registros.length && (
+                <View style={styles.impactRecords}>
+                  <Text style={[styles.impactLabel, { color: colors.text }]}>Registros recientes</Text>
+                  {impact.registros.slice(0, 5).map((record) => (
+                    <View key={record.id} style={styles.impactRecord}>
+                      <Text style={[styles.impactRecordText, { color: colors.textSecondary }]}>
+                        {record.etiqueta}: {formatAmount(record.cantidad)} {record.unidad}
+                        {record.registradoEn ? ` · ${formatImpactDate(record.registradoEn)}` : ""}
+                      </Text>
+                      {!!record.nota && (
+                        <Text style={[styles.impactRecordText, { color: colors.textSecondary }]}>{record.nota}</Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
+          <Pressable onPress={() => router.push("/impacto")} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>Ver impacto acumulado de Regenera →</Text>
+          </Pressable>
+        </View>
+
+        <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Ubicación</Text>
           {Platform.OS === "web" ? (
             <Pressable onPress={() => Linking.openURL(mapUrl)} style={styles.mapLink}>
@@ -395,6 +471,20 @@ function formatCategory(value: string): string {
     .join(" ");
 }
 
+function formatAmount(value: number): string {
+  return new Intl.NumberFormat("es-MX", { maximumFractionDigits: 2 }).format(value);
+}
+
+function formatImpactDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "fecha no disponible";
+  return new Intl.DateTimeFormat("es-MX", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "America/Mazatlan",
+  }).format(date);
+}
+
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12, padding: 24 },
   errorState: { alignItems: "stretch" },
@@ -406,6 +496,10 @@ const styles = StyleSheet.create({
   category: { alignSelf: "flex-start", color: "#164F3D", backgroundColor: "#DCE8DF", borderRadius: 14, paddingHorizontal: 11, paddingVertical: 6, fontSize: 12, fontWeight: "700", overflow: "hidden" },
   content: { padding: 18, gap: 14 },
   card: { padding: 18, borderRadius: 18, gap: 13 },
+  impactRecords: { gap: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#B7C7BE", paddingTop: 10 },
+  impactLabel: { fontSize: 14, fontWeight: "700" },
+  impactRecord: { gap: 3 },
+  impactRecordText: { fontSize: 12, lineHeight: 18 },
   sectionTitle: { fontSize: 18, fontWeight: "800" },
   description: { fontSize: 15, lineHeight: 23 },
   fact: { gap: 3 },
