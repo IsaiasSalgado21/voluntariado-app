@@ -24,6 +24,14 @@ export default function TabLayout() {
           <Stack.Screen name="inscripciones" />
           <Stack.Screen name="notificaciones" />
           <Stack.Screen name="dashboard" />
+          <Stack.Screen name="asistencia-qr" />
+          <Stack.Screen name="organizador/voluntariados" />
+          <Stack.Screen name="organizador/voluntariado-editor" />
+          <Stack.Screen name="organizador/voluntariado/[id]" />
+          <Stack.Screen name="admin/usuarios" />
+          <Stack.Screen name="admin/usuario-editor" />
+          <Stack.Screen name="admin/moderacion" />
+          <Stack.Screen name="admin/auditoria" />
         </Stack>
       </SessionProvider>
     </ThemeProvider>

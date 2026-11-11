@@ -64,9 +64,20 @@ Web Push subscriptions (`endpoint`, `keys.p256dh`, and `keys.auth`); native Expo
 push uses a different token contract, so this app currently provides the
 in-app inbox but does not claim to enable native push.
 
-The role-based dashboard is a mobile layout preview. Volunteer actions link to
-available app screens; organizer and administrator management tools that do
-not yet have mobile flows are marked “En demo”.
+The role-based dashboard loads summaries from the API. Volunteers can open
+their enrollments and notification inbox; organizers can list only their
+managed activities, create or edit an activity, inspect its participant
+dashboard, enable its attendance QR, and register attendance manually.
+Administrators can manage accounts, review activities and articles, publish or
+archive flora/fauna and places, and inspect audit entries. The API remains the
+authority for authorization, ownership, activity status, enrollment, and
+attendance time-window checks.
+
+The attendance QR scanner requests camera access on iOS and Android. A
+development build must be rebuilt after adding the `expo-camera` config plugin;
+Expo Go uses the native camera module already included in Expo Go. Native
+push notifications are still not included because the API only exposes Web
+Push subscriptions.
 
 In the output, you'll find options to open the app in a
 

@@ -200,13 +200,22 @@ export default function EnrollmentsScreen() {
                     </Pressable>
                   </View>
                 ) : active ? (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={() => setConfirmingId(enrollment.id)}
-                    style={styles.secondaryButton}
-                  >
-                    <Text style={styles.secondaryButtonText}>Cancelar participación</Text>
-                  </Pressable>
+                  <>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => router.push("/asistencia-qr")}
+                      style={styles.secondaryButton}
+                    >
+                      <Text style={styles.secondaryButtonText}>Registrar asistencia con QR</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setConfirmingId(enrollment.id)}
+                      style={styles.secondaryButton}
+                    >
+                      <Text style={styles.secondaryButtonText}>Cancelar participación</Text>
+                    </Pressable>
+                  </>
                 ) : null}
               </View>
             );

@@ -1,4 +1,11 @@
-export type DashboardAction = "volunteers" | "enrollments" | "notifications";
+export type DashboardAction =
+  | "volunteers"
+  | "enrollments"
+  | "notifications"
+  | "manageVolunteers"
+  | "users"
+  | "moderation"
+  | "audit";
 
 export type DashboardCard = {
   icon: string;
@@ -57,14 +64,14 @@ const ORGANIZER_DASHBOARD: RoleDashboard = {
     {
       icon: "📅",
       title: "Mis voluntariados",
-      description: "La gestión de actividades estará disponible en una próxima entrega.",
-      action: null,
+      description: "Crea actividades y revisa el estado de publicación.",
+      action: "manageVolunteers",
     },
     {
       icon: "👥",
       title: "Participantes y asistencia",
-      description: "El seguimiento de participantes aún no está disponible en la app.",
-      action: null,
+      description: "Consulta participantes y confirma su asistencia.",
+      action: "manageVolunteers",
     },
   ],
 };
@@ -82,20 +89,20 @@ const ADMIN_DASHBOARD: RoleDashboard = {
     {
       icon: "🛡️",
       title: "Usuarios y roles",
-      description: "La administración de cuentas no está habilitada en la app.",
-      action: null,
+      description: "Busca cuentas, cambia roles y activa o desactiva usuarios.",
+      action: "users",
     },
     {
       icon: "📝",
       title: "Revisión de contenido",
-      description: "La revisión de publicaciones aún no está disponible en la app.",
-      action: null,
+      description: "Revisa actividades, artículos, lugares y registros naturales.",
+      action: "moderation",
     },
     {
       icon: "📊",
       title: "Auditoría y reportes",
-      description: "Los reportes administrativos quedan para una próxima entrega.",
-      action: null,
+      description: "Consulta las acciones administrativas registradas.",
+      action: "audit",
     },
   ],
 };
