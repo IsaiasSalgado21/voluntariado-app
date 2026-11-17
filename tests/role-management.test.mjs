@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createManagedVolunteer,
+  deleteManagedVolunteer,
+  fetchManagedCommentsDefault,
   fetchManagedPlaceOptions,
   fetchManagedVolunteers,
   normalizeCategory,
@@ -11,6 +13,7 @@ import {
   parseManagedVolunteer,
   parseManagedVolunteerList,
   updateManagedVolunteer,
+  updateManagedCommentsDefault,
 } from "../src/features/organizador/api.ts";
 import {
   fetchAdminUsers,
@@ -23,6 +26,8 @@ import {
 } from "../src/features/admin/api.ts";
 import {
   registerManualAttendance,
+  requestAttendanceCorrection,
+  respondAttendanceCorrection,
   scanAttendanceQr,
   updateAttendanceCode,
 } from "../src/features/asistencia/api.ts";
@@ -42,9 +47,11 @@ const volunteer = {
   requisitos: [],
   materiales: [],
   estado: "publicado",
+  iniciadoPorFecha: false,
   imagen: null,
   imagenes: [],
   tokenAsistencia: "qr-secret",
+  codigoCorto: "A1B2C3D4",
   codigoAsistenciaActivo: true,
 };
 
@@ -95,12 +102,24 @@ test("parses managed activities and organizer dashboard summaries", async () => 
     usuarioId: "user-1",
     nombre: "Volunteer",
     correo: "volunteer@example.test",
+    foto: null,
     estadoInscripcion: "inscrita",
+    falto: true,
+    solicitudAsistencia: {
+      id: "request-1",
+      estado: "pendiente",
+      motivoRespuesta: null,
+    },
     asistencia: null,
   };
   const sampleDashboard = {
     data: {
-      voluntariado: { ...legacyVolunteer, lugar: { nombre: "Playa", municipio: "La Paz", direccion: null } },
+      voluntariado: {
+        ...legacyVolunteer,
+        finalizadoPorFecha: false,
+        cancelado: false,
+        lugar: { nombre: "Playa", municipio: "La Paz", direccion: null },
+      },
       estadisticas: {
         inscritos: 1,
         cupo: 20,
@@ -109,6 +128,7 @@ test("parses managed activities and organizer dashboard summaries", async () => 
         asistencias: 0,
         porcentajeAsistencia: 0,
         pendientes: 1,
+        faltas: 1,
         canceladas: 0,
         registrosQr: 0,
       },
@@ -130,7 +150,10 @@ test("parses managed activities and organizer dashboard summaries", async () => 
     const dashboard = await fetchVolunteerDashboard("bearer", "volunteer-1");
     assert.equal(dashboard.volunteer.codigoAsistenciaActivo, true);
     assert.equal(dashboard.statistics.inscritos, 1);
+    assert.equal(dashboard.statistics.faltas, 1);
     assert.equal(dashboard.participants[0].usuarioId, "user-1");
+    assert.equal(dashboard.participants[0].falto, true);
+    assert.equal(dashboard.participants[0].solicitudAsistencia?.id, "request-1");
     assert.equal((await createManagedVolunteer("bearer", volunteer)).id, "volunteer-1");
     assert.equal((await updateManagedVolunteer("bearer", "volunteer-1", { cupo: 25 })).cupo, 20);
     assert.equal(mock.requests[0].url, "https://api.example.test/api/admin/voluntariados");
@@ -164,6 +187,34 @@ test("requests organizer place options with the authenticated token", async () =
     assert.equal(places[0].id, "owned-place");
     assert.equal(mock.requests[0].url, "https://api.example.test/api/lugares");
     assert.equal(mock.requests[0].headers.get("Authorization"), "Bearer organizer-token");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("loads and updates a managed activity's comment visibility with authenticated requests", async () => {
+  const mock = installFetch((request) => request.method === "GET"
+    ? { success: true, voluntariado: { comentarios_por_defecto: "privado" } }
+    : {
+      data: {
+        voluntariado_id: "volunteer-1",
+        comentarios_por_defecto: request.body.comentarios_por_defecto,
+      },
+    });
+  try {
+    assert.equal(await fetchManagedCommentsDefault("organizer-token", "volunteer-1"), "privado");
+    assert.equal(
+      await updateManagedCommentsDefault("organizer-token", "volunteer-1", "publico"),
+      "publico",
+    );
+    assert.equal(mock.requests[0].url, "https://api.example.test/api/voluntariados/volunteer-1");
+    assert.equal(mock.requests[0].headers.get("Authorization"), "Bearer organizer-token");
+    assert.equal(mock.requests[1].method, "PATCH");
+    assert.equal(
+      mock.requests[1].url,
+      "https://api.example.test/api/voluntariados/volunteer-1/config-comentarios",
+    );
+    assert.deepEqual(mock.requests[1].body, { comentarios_por_defecto: "publico" });
   } finally {
     mock.restore();
   }
@@ -279,15 +330,39 @@ test("registers QR and manual attendance through the checked-in API contract", a
     metodo: "QR",
     confirmada: true,
   };
-  const mock = installFetch((request) => ({
-    success: true,
-    asistencia: { ...attendance, metodo: request.body.metodo },
-    data: { id: "volunteer-1" },
-  }));
+  const mock = installFetch((request) => {
+    if (request.url.endsWith("/api/asistencias/solicitudes")) {
+      return {
+        success: true,
+        message: "Enviamos tu solicitud al propietario del voluntariado.",
+        solicitud: { id: "request-1", estado: "pendiente" },
+      };
+    }
+    if (request.url.endsWith("/api/asistencias/solicitudes/request-1/responder")) {
+      return { success: true, message: "La solicitud fue rechazada." };
+    }
+    return {
+      success: true,
+      asistencia: { ...attendance, metodo: request.body.metodo },
+      data: { id: "volunteer-1" },
+    };
+  });
   try {
     assert.equal((await scanAttendanceQr("bearer", "qr-token")).metodo, "QR");
     assert.equal((await registerManualAttendance("bearer", "user-1", "volunteer-1")).metodo, "manual");
     await updateAttendanceCode("bearer", "volunteer-1", false);
+    assert.deepEqual(
+      await requestAttendanceCorrection("bearer", "volunteer-1"),
+      {
+        id: "request-1",
+        estado: "pendiente",
+        message: "Enviamos tu solicitud al propietario del voluntariado.",
+      },
+    );
+    assert.equal(
+      await respondAttendanceCorrection("bearer", "request-1", "rechazar", "No se localizó."),
+      "La solicitud fue rechazada.",
+    );
     assert.deepEqual(mock.requests[0].body, { metodo: "QR", tokenAsistencia: "qr-token" });
     assert.deepEqual(mock.requests[1].body, {
       metodo: "manual",
@@ -296,6 +371,25 @@ test("registers QR and manual attendance through the checked-in API contract", a
     });
     assert.equal(mock.requests[2].method, "PATCH");
     assert.equal(mock.requests[2].url, "https://api.example.test/api/admin/voluntariados/volunteer-1/codigo-asistencia");
+    assert.equal(mock.requests[3].url, "https://api.example.test/api/asistencias/solicitudes");
+    assert.deepEqual(mock.requests[3].body, { voluntariadoId: "volunteer-1" });
+    assert.equal(mock.requests[4].method, "PATCH");
+    assert.deepEqual(mock.requests[4].body, { decision: "rechazar", motivo: "No se localizó." });
+  } finally {
+    mock.restore();
+  }
+});
+
+test("deletes a managed activity only after API confirmation", async () => {
+  const mock = installFetch(() => ({ data: { id: "volunteer-1" } }));
+  try {
+    await deleteManagedVolunteer("organizer-token", "volunteer-1");
+    assert.equal(mock.requests[0].method, "DELETE");
+    assert.equal(
+      mock.requests[0].url,
+      "https://api.example.test/api/admin/voluntariados/volunteer-1",
+    );
+    assert.equal(mock.requests[0].headers.get("Authorization"), "Bearer organizer-token");
   } finally {
     mock.restore();
   }

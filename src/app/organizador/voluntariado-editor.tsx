@@ -18,16 +18,19 @@ import { useSession } from "@/features/auth/use-session";
 import {
   createManagedVolunteer,
   fetchAdminOrganizers,
+  fetchManagedCommentsDefault,
   fetchManagedPlaceOptions,
   fetchManagedVolunteers,
   fetchVolunteerCategoryOptions,
   normalizeCategory,
+  updateManagedCommentsDefault,
   updateManagedVolunteer,
   type ManagedPlaceOption,
   type OrganizerOption,
   type VolunteerCategoryOption,
   type VolunteerFormValues,
 } from "@/features/organizador/api";
+import type { CommentsDefault } from "@/features/voluntariados/api";
 import { formatDateValue, parseDateValue, parseTimeValue } from "@/features/organizador/date";
 
 type DateField = "fechaInicio" | "fechaFin" | "horaInicio" | "horaFin";
@@ -72,6 +75,9 @@ export default function ManagedVolunteerEditorScreen() {
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const [organizers, setOrganizers] = useState<OrganizerOption[]>([]);
   const [organizerId, setOrganizerId] = useState("");
+  const [commentsDefault, setCommentsDefault] = useState<CommentsDefault>("publico");
+  const [initialCommentsDefault, setInitialCommentsDefault] = useState<CommentsDefault>("publico");
+  const [createdVolunteerId, setCreatedVolunteerId] = useState<string | null>(null);
   const [picker, setPicker] = useState<{ field: DateField; mode: "date" | "time" } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -87,14 +93,19 @@ export default function ManagedVolunteerEditorScreen() {
         return;
       }
       try {
-        const [availablePlaces, ownedActivities, availableCategories] = await Promise.all([
+        const [availablePlaces, ownedActivities, availableCategories, currentCommentsDefault] = await Promise.all([
           fetchManagedPlaceOptions(token, controller.signal),
           fetchManagedVolunteers(token, controller.signal),
           fetchVolunteerCategoryOptions(controller.signal),
+          volunteerId
+            ? fetchManagedCommentsDefault(token, volunteerId, controller.signal)
+            : Promise.resolve("publico" as const),
         ]);
         if (!active) return;
         setPlaces(availablePlaces);
         setCategories(availableCategories);
+        setCommentsDefault(currentCommentsDefault);
+        setInitialCommentsDefault(currentCommentsDefault);
         if (!volunteerId) {
           setForm((current) => ({ ...current, lugarId: availablePlaces[0]?.id ?? "" }));
         } else {
@@ -195,10 +206,19 @@ export default function ManagedVolunteerEditorScreen() {
     setSaving(true);
     setError(null);
     try {
-      if (volunteerId) {
-        await updateManagedVolunteer(token, volunteerId, payload);
+      let savedVolunteerId = volunteerId ?? createdVolunteerId;
+      if (savedVolunteerId) {
+        await updateManagedVolunteer(token, savedVolunteerId, payload);
       } else {
-        await createManagedVolunteer(token, payload);
+        const created = await createManagedVolunteer(token, payload);
+        savedVolunteerId = created.id;
+        setCreatedVolunteerId(created.id);
+      }
+
+      if (!volunteerId || createdVolunteerId || commentsDefault !== initialCommentsDefault) {
+        const savedDefault = await updateManagedCommentsDefault(token, savedVolunteerId, commentsDefault);
+        setCommentsDefault(savedDefault);
+        setInitialCommentsDefault(savedDefault);
       }
       router.replace("/organizador/voluntariados");
     } catch (cause) {
@@ -323,6 +343,30 @@ export default function ManagedVolunteerEditorScreen() {
           {field("Requisitos (uno por línea)", form.requisitos, (value) => setText("requisitos", value), colors.text, "Opcional", true)}
           {field("Materiales (uno por línea)", form.materiales, (value) => setText("materiales", value), colors.text, "Opcional", true)}
 
+          <View style={styles.commentConfig}>
+            <Text style={styles.label}>Visibilidad predeterminada de comentarios</Text>
+            <View style={styles.chipList}>
+              {(["publico", "privado"] as const).map((value) => (
+                <Pressable
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: commentsDefault === value }}
+                  key={value}
+                  onPress={() => setCommentsDefault(value)}
+                  style={[styles.chip, commentsDefault === value && styles.selectedChip]}
+                >
+                  <Text style={[styles.chipText, commentsDefault === value && styles.selectedChipText]}>
+                    {value === "publico" ? "Público" : "Privado"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>
+              {commentsDefault === "privado"
+                ? "Los comentarios nuevos de voluntarios serán dudas privadas; las verá su autor, la organización y administración."
+                : "Los comentarios nuevos serán públicos; cada voluntario puede marcar su duda como privada."}
+            </Text>
+          </View>
+
           <View style={[styles.notice, { backgroundColor: colors.backgroundElement }]}>
             <Text style={[styles.hint, { color: colors.textSecondary }]}>
               {user?.rol === "organizador"
@@ -402,6 +446,7 @@ const styles = StyleSheet.create({
   subtitle: { fontSize: 14, lineHeight: 20 },
   form: { gap: 14 },
   field: { gap: 6 },
+  commentConfig: { gap: 8, padding: 12, borderRadius: 12, backgroundColor: "#FFFFFF" },
   label: { color: "#47594F", fontSize: 13, fontWeight: "700" },
   input: { minHeight: 48, borderWidth: 1, borderColor: "#CAD5CD", borderRadius: 13, paddingHorizontal: 13, backgroundColor: "#FFFFFF", fontSize: 15 },
   multiline: { minHeight: 94, paddingTop: 12 },

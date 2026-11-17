@@ -1,4 +1,11 @@
-import { requestApiJson } from "../api-client.ts";
+import { requestApiJson, resolveApiAssetUrl } from "../api-client.ts";
+import { isCommentsDefault, type CommentsDefault } from "../voluntariados/api.ts";
+
+export type AttendanceCorrectionRequest = {
+  id: string;
+  estado: "pendiente" | "aceptando" | "aceptada" | "rechazada";
+  motivoRespuesta: string | null;
+};
 
 export type ManagedVolunteer = {
   id: string;
@@ -15,13 +22,21 @@ export type ManagedVolunteer = {
   requisitos: string[];
   materiales: string[];
   estado: string;
+  iniciadoPorFecha: boolean;
   tokenAsistencia: string | null;
+  codigoCorto: string | null;
   codigoAsistenciaActivo: boolean;
 };
 
 export type VolunteerFormValues = Omit<
   ManagedVolunteer,
-  "id" | "organizadorId" | "estado" | "tokenAsistencia" | "codigoAsistenciaActivo"
+  | "id"
+  | "organizadorId"
+  | "estado"
+  | "iniciadoPorFecha"
+  | "tokenAsistencia"
+  | "codigoCorto"
+  | "codigoAsistenciaActivo"
 > & { organizadorId?: string };
 
 export type OrganizerOption = {
@@ -43,7 +58,11 @@ export type VolunteerCategoryOption = {
 };
 
 export type VolunteerDashboard = {
-  volunteer: ManagedVolunteer & { lugar: { nombre: string; municipio: string; direccion: string | null } | null };
+  volunteer: ManagedVolunteer & {
+    finalizadoPorFecha: boolean;
+    cancelado: boolean;
+    lugar: { nombre: string; municipio: string; direccion: string | null } | null;
+  };
   statistics: {
     inscritos: number;
     cupo: number;
@@ -52,6 +71,7 @@ export type VolunteerDashboard = {
     asistencias: number;
     porcentajeAsistencia: number;
     pendientes: number;
+    faltas: number;
     canceladas: number;
     registrosQr: number;
   };
@@ -60,7 +80,10 @@ export type VolunteerDashboard = {
     usuarioId: string;
     nombre: string | null;
     correo: string | null;
+    foto: string | null;
     estadoInscripcion: string;
+    falto: boolean;
+    solicitudAsistencia: AttendanceCorrectionRequest | null;
     asistencia: { confirmada: boolean; fecha: string | null; hora: string | null; metodo: string | null } | null;
   }>;
 };
@@ -82,7 +105,14 @@ function asNumber(value: unknown, field: string): number {
 }
 
 export function parseManagedVolunteer(value: unknown): ManagedVolunteer {
-  if (!isRecord(value) || typeof value.cupo !== "number") {
+  if (
+    !isRecord(value)
+    || typeof value.cupo !== "number"
+    || typeof value.iniciadoPorFecha !== "boolean"
+    || (value.codigoCorto !== undefined
+      && value.codigoCorto !== null
+      && typeof value.codigoCorto !== "string")
+  ) {
     throw new Error("La respuesta de voluntariado administrado no tiene el formato esperado.");
   }
   const stringArray = (input: unknown) => Array.isArray(input)
@@ -103,7 +133,9 @@ export function parseManagedVolunteer(value: unknown): ManagedVolunteer {
     requisitos: stringArray(value.requisitos),
     materiales: stringArray(value.materiales),
     estado: asString(value.estado, "estado"),
+    iniciadoPorFecha: value.iniciadoPorFecha,
     tokenAsistencia: typeof value.tokenAsistencia === "string" ? value.tokenAsistencia : null,
+    codigoCorto: typeof value.codigoCorto === "string" ? value.codigoCorto : null,
     codigoAsistenciaActivo: typeof value.codigoAsistenciaActivo === "boolean"
       ? value.codigoAsistenciaActivo
       : true,
@@ -119,6 +151,49 @@ export function parseManagedVolunteerList(value: unknown): ManagedVolunteer[] {
 
 export async function fetchManagedVolunteers(token: string, signal?: AbortSignal): Promise<ManagedVolunteer[]> {
   return parseManagedVolunteerList(await requestApiJson("/api/admin/voluntariados", { token, signal }));
+}
+
+export async function fetchManagedCommentsDefault(
+  token: string,
+  id: string,
+  signal?: AbortSignal,
+): Promise<CommentsDefault> {
+  const result = await requestApiJson(
+    `/api/voluntariados/${encodeURIComponent(id)}`,
+    { token, signal },
+  );
+  if (!isRecord(result) || !isRecord(result.voluntariado)) {
+    throw new Error("La configuración de comentarios no tiene el formato esperado.");
+  }
+  const value = result.voluntariado.comentarios_por_defecto;
+  if (value === undefined || value === null) return "publico";
+  if (!isCommentsDefault(value)) {
+    throw new Error("La configuración de comentarios contiene una opción no válida.");
+  }
+  return value;
+}
+
+export async function updateManagedCommentsDefault(
+  token: string,
+  id: string,
+  commentsDefault: CommentsDefault,
+): Promise<CommentsDefault> {
+  const result = await requestApiJson(
+    `/api/voluntariados/${encodeURIComponent(id)}/config-comentarios`,
+    {
+      method: "PATCH",
+      token,
+      body: { comentarios_por_defecto: commentsDefault },
+    },
+  );
+  if (!isRecord(result) || !isRecord(result.data)) {
+    throw new Error("La API no confirmó la configuración de comentarios.");
+  }
+  const value = result.data.comentarios_por_defecto;
+  if (typeof result.data.voluntariado_id !== "string" || !isCommentsDefault(value)) {
+    throw new Error("La configuración de comentarios devuelta por la API no es válida.");
+  }
+  return value;
 }
 
 export async function fetchManagedPlaceOptions(token: string, signal?: AbortSignal): Promise<ManagedPlaceOption[]> {
@@ -228,6 +303,16 @@ export async function updateManagedVolunteer(
   return parseManagedVolunteer(result.data);
 }
 
+export async function deleteManagedVolunteer(token: string, id: string): Promise<void> {
+  const result = await requestApiJson(
+    `/api/admin/voluntariados/${encodeURIComponent(id)}`,
+    { method: "DELETE", token },
+  );
+  if (!isRecord(result) || !isRecord(result.data) || result.data.id !== id) {
+    throw new Error("La API no confirmó la eliminación del voluntariado.");
+  }
+}
+
 export async function fetchVolunteerDashboard(
   token: string,
   id: string,
@@ -243,7 +328,13 @@ export async function fetchVolunteerDashboard(
   const rawStats = result.data.estadisticas;
   const rawVolunteer = result.data.voluntariado;
   const rawParticipants = result.data.participantes;
-  if (!isRecord(rawStats) || !isRecord(rawVolunteer) || !Array.isArray(rawParticipants)) {
+  if (
+    !isRecord(rawStats)
+    || !isRecord(rawVolunteer)
+    || typeof rawVolunteer.finalizadoPorFecha !== "boolean"
+    || typeof rawVolunteer.cancelado !== "boolean"
+    || !Array.isArray(rawParticipants)
+  ) {
     throw new Error("El dashboard del voluntariado no tiene el formato esperado.");
   }
   const volunteer = parseManagedVolunteer(rawVolunteer);
@@ -261,7 +352,12 @@ export async function fetchVolunteerDashboard(
     : null;
 
   return {
-    volunteer: { ...volunteer, lugar: place },
+    volunteer: {
+      ...volunteer,
+      finalizadoPorFecha: rawVolunteer.finalizadoPorFecha,
+      cancelado: rawVolunteer.cancelado,
+      lugar: place,
+    },
     statistics: {
       inscritos: asNumber(rawStats.inscritos, "inscritos"),
       cupo: asNumber(rawStats.cupo, "cupo"),
@@ -270,14 +366,19 @@ export async function fetchVolunteerDashboard(
       asistencias: asNumber(rawStats.asistencias, "asistencias"),
       porcentajeAsistencia: asNumber(rawStats.porcentajeAsistencia, "porcentaje de asistencia"),
       pendientes: asNumber(rawStats.pendientes, "asistencias pendientes"),
+      faltas: asNumber(rawStats.faltas, "faltas"),
       canceladas: asNumber(rawStats.canceladas, "cancelaciones"),
       registrosQr: asNumber(rawStats.registrosQr, "registros QR"),
     },
     participants: rawParticipants.map((item, index) => {
       if (!isRecord(item) || typeof item.id !== "string" || typeof item.usuarioId !== "string"
-        || typeof item.estadoInscripcion !== "string") {
+        || typeof item.estadoInscripcion !== "string" || typeof item.falto !== "boolean"
+        || (item.foto !== undefined && item.foto !== null && typeof item.foto !== "string")) {
         throw new Error(`El participante ${index + 1} tiene un formato inesperado.`);
       }
+      const attendanceRequest = item.solicitudAsistencia === undefined || item.solicitudAsistencia === null
+        ? null
+        : parseAttendanceCorrectionRequest(item.solicitudAsistencia, index);
       const attendance = isRecord(item.asistencia) && typeof item.asistencia.confirmada === "boolean"
         ? {
           confirmada: item.asistencia.confirmada,
@@ -291,9 +392,39 @@ export async function fetchVolunteerDashboard(
         usuarioId: item.usuarioId,
         nombre: typeof item.nombre === "string" ? item.nombre : null,
         correo: typeof item.correo === "string" ? item.correo : null,
+        foto: resolveApiAssetUrl(typeof item.foto === "string" ? item.foto : null),
         estadoInscripcion: item.estadoInscripcion,
+        falto: item.falto,
+        solicitudAsistencia: attendanceRequest,
         asistencia: attendance,
       };
     }),
   };
+}
+
+function parseAttendanceCorrectionRequest(value: unknown, index: number): AttendanceCorrectionRequest {
+  if (
+    !isRecord(value)
+    || typeof value.id !== "string"
+    || !isAttendanceCorrectionState(value.estado)
+    || (value.motivoRespuesta !== undefined
+      && value.motivoRespuesta !== null
+      && typeof value.motivoRespuesta !== "string")
+  ) {
+    throw new Error(`La solicitud de asistencia del participante ${index + 1} tiene un formato inesperado.`);
+  }
+  return {
+    id: value.id,
+    estado: value.estado,
+    motivoRespuesta: typeof value.motivoRespuesta === "string" ? value.motivoRespuesta : null,
+  };
+}
+
+function isAttendanceCorrectionState(
+  value: unknown,
+): value is AttendanceCorrectionRequest["estado"] {
+  return value === "pendiente"
+    || value === "aceptando"
+    || value === "aceptada"
+    || value === "rechazada";
 }

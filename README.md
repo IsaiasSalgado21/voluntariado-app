@@ -30,12 +30,19 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 The map uses the public `GET /api/v1/mapa/lugares` endpoint and displays active
 places with valid coordinates, including their name, type, municipality, and
 description when available. It does not display demonstration polygons or
-activities. The volunteer list and details use the public
-`/api/v1/mapa/voluntariados` endpoint and `/api/v1/mapa/lugares` for place
-filters; unpublished activities and records without map coordinates are not
-shown. Volunteer images are returned as API-served URLs and displayed in list
-cards and details. Search remains visible while category, place, date, and
-capacity filters can be expanded only when needed.
+activities. The volunteer list uses the public
+`GET /api/v1/mapa/voluntariados` endpoint and `/api/v1/mapa/lugares` for place
+filters. The detail screen loads its activity by ID from
+`GET /api/voluntariados/{id}` and its place from `GET /api/lugares/{id}`, so it
+can show published activities that are not in the map list or lack public
+coordinates. Details include dates, schedule, requirements, materials,
+organizer, status, and place; the map is shown only when public coordinates are
+available. Occupancy counts are supplemented from the map endpoint when the
+activity is present there; otherwise the maximum capacity is shown and the API
+remains authoritative for enrollment availability. Volunteer images are
+returned as API-served URLs and displayed in list cards and details. Search
+remains visible while category, place, date, and capacity filters can be
+expanded only when needed.
 
 The Flora y fauna catalog uses the public `GET /api/flora-fauna` endpoint and
 shows published records, including the habitat, conservation status, and images
@@ -59,6 +66,19 @@ The volunteer detail screen uses the authenticated enrollment endpoints:
 enrollments from `GET /api/inscripciones`; the API remains responsible for role,
 account, availability, and cancellation checks.
 
+Comments on a volunteer detail use the authenticated
+`GET`/`POST /api/voluntariados/{id}/comentarios` endpoints, with
+`POST /api/comentarios/{id}/responder` for organizer/admin replies,
+`PATCH /api/comentarios/{id}/visibilidad` for moderation,
+`PATCH /api/comentarios/{id}/publicar` for publishing a private question, and
+`DELETE /api/comentarios/{id}` for authorized deletion. Replies are displayed
+nested under their parent; author avatars, privacy/publication states, and
+server-provided action permissions are shown without reproducing authorization
+rules in the app. Organizers and admins can set the default with
+`PATCH /api/voluntariados/{id}/config-comentarios`; the editor reads the current
+value from `GET /api/voluntariados/{id}`. The API remains authoritative for
+comment visibility, privacy inheritance, ownership, and moderation.
+
 The notification inbox uses `GET /api/notificaciones`,
 `PATCH /api/notificaciones/{id}/leida`, and
 `PATCH /api/notificaciones/marcar-todas-leidas`. The API implements push as
@@ -74,6 +94,18 @@ Administrators can manage accounts, review activities and articles, publish or
 archive flora/fauna and places, and inspect audit entries. The API remains the
 authority for authorization, ownership, activity status, enrollment, and
 attendance time-window checks.
+
+The organizer activity dashboard shows attendance requests beside each
+participant. A participant with a recorded absence can request a review from
+the activity detail with `POST /api/asistencias/solicitudes`; the owner or an
+admin can accept or reject it with
+`PATCH /api/asistencias/solicitudes/{id}/responder`. Accepting confirms
+attendance on the server; a rejection can include an optional reason. Manual
+attendance is offered only after the activity starts and for published or
+finalized activities. QR display and activation follow the activity's published,
+canceled, and finished state. Activity editing/deletion also follows the
+API's ownership and start-time rules, and deletion requires an in-app
+confirmation.
 
 Organizers and admins can report a completed activity's environmental impact
 from its management dashboard. The public activity detail shows its totals, and

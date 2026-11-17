@@ -11,6 +11,14 @@ export type Enrollment = {
   observaciones: string | null;
 };
 
+export type MyEnrollmentStatus = {
+  enrolled: boolean;
+  enrollmentId: string | null;
+  attended: boolean;
+  absent: boolean;
+  attendanceRequestStatus: "pendiente" | "aceptando" | "aceptada" | "rechazada" | null;
+};
+
 function isEnrollmentStatus(value: unknown): value is EnrollmentStatus {
   return value === "inscrita"
     || value === "activa"
@@ -63,22 +71,36 @@ export function parseEnrollmentList(value: unknown): Enrollment[] {
   return value.inscripciones.map(parseEnrollment);
 }
 
-export function parseMyEnrollment(value: unknown): {
-  enrolled: boolean;
-  enrollmentId: string | null;
-} {
+export function parseMyEnrollment(value: unknown): MyEnrollmentStatus {
+  const requestStatus = isRecord(value) ? value.solicitudAsistenciaEstado : undefined;
   if (
     !isRecord(value)
     || value.success !== true
     || typeof value.inscrito !== "boolean"
     || !(value.inscripcionId === null || typeof value.inscripcionId === "string")
+    || typeof value.asistio !== "boolean"
+    || typeof value.falto !== "boolean"
     || (value.inscrito && typeof value.inscripcionId !== "string")
     || (!value.inscrito && value.inscripcionId !== null)
+    || !(
+      requestStatus === undefined
+      || requestStatus === null
+      || requestStatus === "pendiente"
+      || requestStatus === "aceptando"
+      || requestStatus === "aceptada"
+      || requestStatus === "rechazada"
+    )
   ) {
     throw new Error("La respuesta de participación no tiene el formato esperado.");
   }
 
-  return { enrolled: value.inscrito, enrollmentId: value.inscripcionId };
+  return {
+    enrolled: value.inscrito,
+    enrollmentId: value.inscripcionId,
+    attended: value.asistio,
+    absent: value.falto,
+    attendanceRequestStatus: typeof requestStatus === "string" ? requestStatus : null,
+  };
 }
 
 export async function fetchMyEnrollments(
@@ -92,7 +114,7 @@ export async function fetchMyEnrollment(
   token: string,
   volunteerId: string,
   signal?: AbortSignal,
-): Promise<{ enrolled: boolean; enrollmentId: string | null }> {
+): Promise<MyEnrollmentStatus> {
   const path = `/api/inscripciones/voluntariado/${encodeURIComponent(volunteerId)}/mia`;
   return parseMyEnrollment(await requestApiJson(path, { token, signal }));
 }

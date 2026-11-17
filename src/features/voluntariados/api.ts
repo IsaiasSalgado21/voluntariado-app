@@ -1,5 +1,7 @@
 import type { VolunteerFilters } from "./filters";
-import { fetchApiJson, resolveApiAssetUrl } from "../api-client.ts";
+import { fetchApiJson, requestApiJson, resolveApiAssetUrl } from "../api-client.ts";
+
+export type CommentsDefault = "publico" | "privado";
 
 export type VolunteerMapItem = {
   id: string;
@@ -16,6 +18,41 @@ export type VolunteerMapItem = {
   lleno: boolean;
   lat: number;
   lng: number;
+};
+
+export type VolunteerDetail = {
+  id: string;
+  titulo: string;
+  descripcion: string;
+  categoria: string | null;
+  imagen: string | null;
+  imagenes: string[];
+  estado: string;
+  fechaInicio: string | null;
+  fechaFin: string | null;
+  horaInicio: string | null;
+  horaFin: string | null;
+  lugarId: string;
+  latitud: number | null;
+  longitud: number | null;
+  cupo: number;
+  requisitos: string[];
+  materiales: string[];
+  organizadorNombre: string | null;
+  organizadorId: string | null;
+  organizadorFoto: string | null;
+  finalizadoPorFecha: boolean;
+  comentariosPorDefecto: CommentsDefault;
+};
+
+export type VolunteerPlaceDetail = {
+  id: string;
+  nombre: string;
+  descripcion: string | null;
+  municipio: string | null;
+  tipo: string | null;
+  latitud: number | null;
+  longitud: number | null;
 };
 
 export type PlaceOption = {
@@ -40,6 +77,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function nullableStringField(value: unknown): boolean {
   return value === undefined || value === null || typeof value === "string";
+}
+
+export function isCommentsDefault(value: unknown): value is CommentsDefault {
+  return value === "publico" || value === "privado";
+}
+
+function nullableNumber(value: unknown, field: string): number | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`El registro no contiene ${field} válido.`);
+  }
+  return value;
+}
+
+function parseStringList(value: unknown, field: string): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === "string")) {
+    throw new Error(`El voluntariado no contiene ${field} válidos.`);
+  }
+  return value;
 }
 
 function isCoordinate(value: unknown, min: number, max: number): value is number {
@@ -107,6 +164,79 @@ export function parseVolunteerMapItems(data: unknown): VolunteerMapItem[] {
   });
 }
 
+export function parseVolunteerDetail(value: unknown, fallbackId: string): VolunteerDetail {
+  const id = isRecord(value)
+    ? typeof value.id === "string"
+      ? value.id
+      : typeof value._id === "string"
+        ? value._id
+        : fallbackId
+    : fallbackId;
+  if (
+    !isRecord(value)
+    || !id
+    || typeof value.titulo !== "string"
+    || typeof value.descripcion !== "string"
+    || !nullableStringField(value.categoria)
+    || typeof value.estado !== "string"
+    || !nullableStringField(value.fechaInicio)
+    || !nullableStringField(value.fechaFin)
+    || !nullableStringField(value.horaInicio)
+    || !nullableStringField(value.horaFin)
+    || typeof value.lugarId !== "string"
+    || typeof value.cupo !== "number"
+    || !Number.isFinite(value.cupo)
+    || !nullableStringField(value.imagen)
+    || !nullableStringField(value.organizadorNombre)
+    || !nullableStringField(value.organizadorId)
+    || !nullableStringField(value.organizadorFoto)
+    || (value.finalizadoPorFecha !== undefined && typeof value.finalizadoPorFecha !== "boolean")
+    || (
+      value.comentarios_por_defecto !== undefined
+      && value.comentarios_por_defecto !== null
+      && !isCommentsDefault(value.comentarios_por_defecto)
+    )
+  ) {
+    throw new Error("El voluntariado tiene un formato inesperado.");
+  }
+
+  const imageUrls = Array.isArray(value.imagenes)
+    ? value.imagenes
+      .filter((image): image is string => typeof image === "string")
+      .map((image) => resolveApiAssetUrl(image))
+      .filter((image): image is string => image !== null)
+    : [];
+
+  return {
+    id,
+    titulo: value.titulo,
+    descripcion: value.descripcion,
+    categoria: typeof value.categoria === "string" ? value.categoria : null,
+    imagen: resolveApiAssetUrl(typeof value.imagen === "string" ? value.imagen : null),
+    imagenes: imageUrls,
+    estado: value.estado,
+    fechaInicio: typeof value.fechaInicio === "string" ? value.fechaInicio : null,
+    fechaFin: typeof value.fechaFin === "string" ? value.fechaFin : null,
+    horaInicio: typeof value.horaInicio === "string" ? value.horaInicio : null,
+    horaFin: typeof value.horaFin === "string" ? value.horaFin : null,
+    lugarId: value.lugarId,
+    latitud: nullableNumber(value.latitud, "la latitud"),
+    longitud: nullableNumber(value.longitud, "la longitud"),
+    cupo: value.cupo,
+    requisitos: parseStringList(value.requisitos, "los requisitos"),
+    materiales: parseStringList(value.materiales, "los materiales"),
+    organizadorNombre: typeof value.organizadorNombre === "string" ? value.organizadorNombre : null,
+    organizadorId: typeof value.organizadorId === "string" ? value.organizadorId : null,
+    organizadorFoto: resolveApiAssetUrl(
+      typeof value.organizadorFoto === "string" ? value.organizadorFoto : null,
+    ),
+    finalizadoPorFecha: value.finalizadoPorFecha === true,
+    comentariosPorDefecto: isCommentsDefault(value.comentarios_por_defecto)
+      ? value.comentarios_por_defecto
+      : "publico",
+  };
+}
+
 export function parsePlaces(data: unknown): PlaceOption[] {
   if (!Array.isArray(data)) {
     throw new Error("La respuesta de lugares no contiene una lista válida.");
@@ -140,6 +270,30 @@ export function parsePlaces(data: unknown): PlaceOption[] {
   });
 }
 
+export function parseVolunteerPlaceDetail(value: unknown): VolunteerPlaceDetail {
+  if (
+    !isRecord(value)
+    || !isRecord(value.data)
+    || typeof value.data.id !== "string"
+    || typeof value.data.nombre !== "string"
+    || !nullableStringField(value.data.descripcion)
+    || !nullableStringField(value.data.municipio)
+    || !nullableStringField(value.data.tipo)
+  ) {
+    throw new Error("El lugar del voluntariado tiene un formato inesperado.");
+  }
+
+  return {
+    id: value.data.id,
+    nombre: value.data.nombre,
+    descripcion: typeof value.data.descripcion === "string" ? value.data.descripcion : null,
+    municipio: typeof value.data.municipio === "string" ? value.data.municipio : null,
+    tipo: typeof value.data.tipo === "string" ? value.data.tipo : null,
+    latitud: nullableNumber(value.data.latitud, "la latitud del lugar"),
+    longitud: nullableNumber(value.data.longitud, "la longitud del lugar"),
+  };
+}
+
 export async function fetchVoluntariados(
   filters: VolunteerFilters = {},
   signal?: AbortSignal,
@@ -158,9 +312,28 @@ export async function fetchPlaces(signal?: AbortSignal): Promise<PlaceOption[]> 
 export async function fetchVoluntariado(
   id: string,
   signal?: AbortSignal,
+): Promise<VolunteerDetail> {
+  const result = await fetchApiJson(`/api/voluntariados/${encodeURIComponent(id)}`, signal);
+  if (!isRecord(result) || result.success !== true || !isRecord(result.voluntariado)) {
+    throw new Error("La respuesta del detalle de voluntariado tiene un formato inesperado.");
+  }
+  return parseVolunteerDetail(result.voluntariado, id);
+}
+
+export async function fetchVolunteerMapItem(
+  id: string,
+  signal?: AbortSignal,
 ): Promise<VolunteerMapItem | null> {
   const items = await fetchVoluntariados({}, signal);
   return items.find((item) => item.id === id) ?? null;
+}
+
+export async function fetchVolunteerPlace(
+  id: string,
+  signal?: AbortSignal,
+): Promise<VolunteerPlaceDetail> {
+  const result = await requestApiJson(`/api/lugares/${encodeURIComponent(id)}`, { signal });
+  return parseVolunteerPlaceDetail(result);
 }
 
 export function buildVolunteerQuery(filters: VolunteerFilters): URLSearchParams {

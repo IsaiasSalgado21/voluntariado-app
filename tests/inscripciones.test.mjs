@@ -29,13 +29,26 @@ test("parses enrollment records and handles MongoDB _id serialization", () => {
     success: true,
     inscrito: true,
     inscripcionId: "enrollment-1",
-  }), { enrolled: true, enrollmentId: "enrollment-1" });
+    asistio: false,
+    falto: true,
+    solicitudAsistenciaEstado: "pendiente",
+  }), {
+    enrolled: true,
+    enrollmentId: "enrollment-1",
+    attended: false,
+    absent: true,
+    attendanceRequestStatus: "pendiente",
+  });
 });
 
 test("rejects malformed or incomplete enrollment responses", () => {
   assert.throws(() => parseEnrollmentList({ success: true, inscripciones: [{ id: "x" }] }), /formato inesperado/);
   assert.throws(() => parseEnrollmentList({ success: true, inscripciones: "invalid" }), /formato esperado/);
-  assert.throws(() => parseMyEnrollment({ success: true, inscrito: true }), /formato esperado/);
+  assert.throws(() => parseMyEnrollment({
+    success: true,
+    inscrito: true,
+    inscripcionId: "enrollment-1",
+  }), /formato esperado/);
 });
 
 test("uses existing enrollment request paths, methods, body, and bearer auth", async () => {
@@ -52,7 +65,14 @@ test("uses existing enrollment request paths, methods, body, and bearer auth", a
     };
     requests.push(request);
     const response = request.url.endsWith("/mia")
-      ? { success: true, inscrito: true, inscripcionId: "enrollment-1" }
+      ? {
+        success: true,
+        inscrito: true,
+        inscripcionId: "enrollment-1",
+        asistio: false,
+        falto: false,
+        solicitudAsistenciaEstado: null,
+      }
       : request.method === "POST" && request.url.endsWith("/cancelar")
         ? { success: true, message: "Tu participación fue cancelada." }
         : request.method === "POST"

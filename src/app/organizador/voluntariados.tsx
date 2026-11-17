@@ -13,6 +13,7 @@ import { Colors } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useSession } from "@/features/auth/use-session";
 import {
+  deleteManagedVolunteer,
   fetchManagedVolunteers,
   type ManagedVolunteer,
 } from "@/features/organizador/api";
@@ -28,6 +29,8 @@ export default function ManagedVolunteersScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -58,6 +61,22 @@ export default function ManagedVolunteersScreen() {
 
   const goBack = () => router.canGoBack() ? router.back() : router.replace("/dashboard");
   const isAdmin = user?.rol === "admin";
+  const canManage = isAdmin || user?.rol === "organizador";
+
+  const removeVolunteer = async (id: string) => {
+    if (!token) return;
+    setDeletingId(id);
+    setError(null);
+    try {
+      await deleteManagedVolunteer(token, id);
+      setItems((current) => current.filter((item) => item.id !== id));
+      setConfirmDeleteId(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudo eliminar el voluntariado.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <ScrollView
@@ -80,18 +99,26 @@ export default function ManagedVolunteersScreen() {
             {isAdmin ? "Revisa actividades y consulta su operación." : "Crea actividades y da seguimiento a cada jornada."}
           </Text>
         </View>
+        {canManage && (
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push("/organizador/voluntariado-editor")}
+            style={styles.addButton}
+          >
+            <Text style={styles.addButtonText}>＋</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {canManage && (
         <Pressable
           accessibilityRole="button"
           onPress={() => router.push("/organizador/voluntariado-editor")}
-          style={styles.addButton}
+          style={styles.primaryButton}
         >
-          <Text style={styles.addButtonText}>＋</Text>
+          <Text style={styles.primaryButtonText}>Crear voluntariado</Text>
         </Pressable>
-      </View>
-
-      <Pressable onPress={() => router.push("/organizador/voluntariado-editor")} style={styles.primaryButton}>
-        <Text style={styles.primaryButtonText}>Crear voluntariado</Text>
-      </Pressable>
+      )}
 
       {status === "loading" || loading ? (
         <View style={styles.state}>
@@ -141,18 +168,63 @@ export default function ManagedVolunteersScreen() {
                 >
                   <Text style={styles.secondaryButtonText}>Participantes y métricas</Text>
                 </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  disabled={item.estado === "finalizado" || item.estado === "cancelado"}
-                  onPress={() => router.push({
-                    pathname: "/organizador/voluntariado-editor",
-                    params: { id: item.id },
-                  })}
-                  style={styles.secondaryButton}
-                >
-                  <Text style={styles.secondaryButtonText}>Editar</Text>
-                </Pressable>
+                {(isAdmin || (
+                  !item.iniciadoPorFecha
+                  && (user?.organizadorVerificado === true || ["pendiente", "rechazado"].includes(item.estado))
+                )) && (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => router.push({
+                      pathname: "/organizador/voluntariado-editor",
+                      params: { id: item.id },
+                    })}
+                    style={styles.secondaryButton}
+                  >
+                    <Text style={styles.secondaryButtonText}>
+                      {item.estado === "rechazado" ? "Editar y reenviar" : "Editar"}
+                    </Text>
+                  </Pressable>
+                )}
+                {(isAdmin || (
+                  !item.iniciadoPorFecha
+                  && (user?.organizadorVerificado === true || ["pendiente", "rechazado"].includes(item.estado))
+                )) && (
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => setConfirmDeleteId(item.id)}
+                    style={styles.dangerButton}
+                  >
+                    <Text style={styles.dangerButtonText}>Eliminar</Text>
+                  </Pressable>
+                )}
               </View>
+              {confirmDeleteId === item.id && (
+                <View style={styles.confirmBox}>
+                  <Text style={styles.confirmText}>
+                    Eliminar permanentemente «{item.titulo}». Esta acción no se puede deshacer.
+                  </Text>
+                  <View style={styles.actions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={deletingId === item.id}
+                      onPress={() => void removeVolunteer(item.id)}
+                      style={[styles.dangerButton, deletingId === item.id && styles.disabled]}
+                    >
+                      <Text style={styles.dangerButtonText}>
+                        {deletingId === item.id ? "Eliminando…" : "Confirmar eliminación"}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={deletingId === item.id}
+                      onPress={() => setConfirmDeleteId(null)}
+                      style={styles.secondaryButton}
+                    >
+                      <Text style={styles.secondaryButtonText}>Conservar</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              )}
             </View>
           ))}
         </View>
@@ -235,5 +307,10 @@ const styles = StyleSheet.create({
   actions: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", gap: 8 },
   secondaryButton: { paddingVertical: 8 },
   secondaryButtonText: { color: "#164F3D", fontSize: 13, fontWeight: "700" },
+  dangerButton: { paddingVertical: 8 },
+  dangerButtonText: { color: "#8C3434", fontSize: 13, fontWeight: "700" },
+  confirmBox: { gap: 8, padding: 11, borderRadius: 12, backgroundColor: "#F4DDDA" },
+  confirmText: { color: "#612D2D", fontSize: 13, lineHeight: 19 },
+  disabled: { opacity: 0.55 },
   error: { color: "#9E3030", fontSize: 13 },
 });

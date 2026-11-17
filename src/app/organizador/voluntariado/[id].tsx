@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,6 +21,7 @@ import {
 } from "@/features/organizador/api";
 import {
   registerManualAttendance,
+  respondAttendanceCorrection,
   updateAttendanceCode,
 } from "@/features/asistencia/api";
 import {
@@ -43,6 +45,10 @@ export default function ManagedVolunteerDashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [workingUserId, setWorkingUserId] = useState<string | null>(null);
+  const [workingRequestId, setWorkingRequestId] = useState<string | null>(null);
+  const [rejectRequestId, setRejectRequestId] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [qrWorking, setQrWorking] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [impact, setImpact] = useState<VolunteerImpactSummary | null>(null);
   const [impactError, setImpactError] = useState<string | null>(null);
@@ -113,16 +119,24 @@ export default function ManagedVolunteerDashboardScreen() {
 
   const changeQrState = async () => {
     if (!token || !dashboard) return;
+    const active = dashboard.volunteer.codigoAsistenciaActivo;
+    const canActivate = dashboard.volunteer.estado === "publicado"
+      && !dashboard.volunteer.finalizadoPorFecha
+      && !dashboard.volunteer.cancelado;
+    if (!active && !canActivate) return;
     setError(null);
+    setQrWorking(true);
     try {
       await updateAttendanceCode(
         token,
         volunteerId,
-        !dashboard.volunteer.codigoAsistenciaActivo,
+        !active,
       );
       setRefreshKey((key) => key + 1);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "No se pudo cambiar el estado del QR.");
+    } finally {
+      setQrWorking(false);
     }
   };
 
@@ -137,6 +151,26 @@ export default function ManagedVolunteerDashboardScreen() {
       setError(cause instanceof Error ? cause.message : "No se pudo registrar la asistencia.");
     } finally {
       setWorkingUserId(null);
+    }
+  };
+
+  const respondToCorrection = async (
+    requestId: string,
+    decision: "aceptar" | "rechazar",
+    motivo = "",
+  ) => {
+    if (!token) return;
+    setWorkingRequestId(requestId);
+    setError(null);
+    try {
+      await respondAttendanceCorrection(token, requestId, decision, motivo);
+      setRejectRequestId(null);
+      setRejectionReason("");
+      setRefreshKey((key) => key + 1);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudo responder la solicitud.");
+    } finally {
+      setWorkingRequestId(null);
     }
   };
 
@@ -180,6 +214,25 @@ export default function ManagedVolunteerDashboardScreen() {
   );
   const activityCanRecordImpact = activityHasEnded
     && ["publicado", "finalizado"].includes(dashboard?.volunteer.estado ?? "");
+  const activityCanRecordAttendance = Boolean(
+    dashboard
+    && dashboard.volunteer.iniciadoPorFecha
+    && ["publicado", "finalizado"].includes(dashboard.volunteer.estado)
+    && !dashboard.volunteer.cancelado,
+  );
+  const qrCanBeActivated = Boolean(
+    dashboard
+    && dashboard.volunteer.estado === "publicado"
+    && !dashboard.volunteer.finalizadoPorFecha
+    && !dashboard.volunteer.cancelado,
+  );
+  const qrCanBeShown = Boolean(
+    dashboard
+    && dashboard.volunteer.codigoAsistenciaActivo
+    && dashboard.volunteer.estado === "publicado"
+    && !dashboard.volunteer.finalizadoPorFecha
+    && !dashboard.volunteer.cancelado,
+  );
 
   const goBack = () => router.canGoBack() ? router.back() : router.replace("/organizador/voluntariados");
 
@@ -225,6 +278,7 @@ export default function ManagedVolunteerDashboardScreen() {
             <Stat label="Participantes" value={dashboard.statistics.inscritos} colors={colors} />
             <Stat label="Lugares disponibles" value={dashboard.statistics.disponibles} colors={colors} />
             <Stat label="Asistencias" value={dashboard.statistics.asistencias} colors={colors} />
+            <Stat label="Faltas" value={dashboard.statistics.faltas} colors={colors} />
             <Stat label="Porcentaje" value={`${dashboard.statistics.porcentajeAsistencia}%`} colors={colors} />
           </View>
 
@@ -235,25 +289,49 @@ export default function ManagedVolunteerDashboardScreen() {
                 Estado: {dashboard.volunteer.codigoAsistenciaActivo ? "Activo" : "Desactivado"}
               </Text>
               <Text style={[styles.hint, { color: colors.textSecondary }]}>
-                El QR lleva a la validación de Regenera. La API solo acepta registros durante el horario de la actividad.
+                {dashboard.volunteer.cancelado
+                  ? "La actividad fue cancelada; el código no se puede usar."
+                  : dashboard.volunteer.finalizadoPorFecha
+                    ? "La actividad concluyó; el registro QR ya no está disponible."
+                    : dashboard.volunteer.estado !== "publicado"
+                      ? "El QR solo puede utilizarse cuando la actividad esté publicada."
+                      : "La API verifica la inscripción y solo acepta registros durante el horario de la actividad."}
               </Text>
-              {qrUrl ? (
+              {qrCanBeShown && qrUrl ? (
                 <View style={styles.qrContainer}>
                   <QRCode value={qrUrl} size={190} />
                 </View>
               ) : (
                 <Text style={[styles.muted, { color: colors.textSecondary }]}>
-                  El QR no está disponible hasta que la API exponga el token y la URL base.
+                  {dashboard.volunteer.codigoAsistenciaActivo
+                    ? qrCanBeShown
+                      ? "No se pudo generar el QR. Revisa la URL de la API y vuelve a cargar."
+                      : "El QR está oculto mientras la actividad no pueda registrar asistencia."
+                    : "El QR está desactivado."}
+                </Text>
+              )}
+              {qrCanBeShown && (
+                <Text style={[styles.hint, { color: colors.textSecondary }]}>
+                  Código corto: {dashboard.volunteer.codigoCorto ?? "No disponible"}
                 </Text>
               )}
               <Text style={[styles.hint, { color: colors.textSecondary }]}>
                 {dashboard.statistics.registrosQr} registros QR confirmados. La API solo acepta asistencia durante el horario publicado.
               </Text>
-              <Pressable onPress={() => void changeQrState()} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>
-                  {dashboard.volunteer.codigoAsistenciaActivo ? "Desactivar QR" : "Activar QR"}
-                </Text>
-              </Pressable>
+              {(dashboard.volunteer.codigoAsistenciaActivo || qrCanBeActivated) && (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={qrWorking}
+                  onPress={() => void changeQrState()}
+                  style={[styles.secondaryButton, qrWorking && styles.disabled]}
+                >
+                  <Text style={styles.secondaryButtonText}>
+                    {qrWorking
+                      ? "Actualizando…"
+                      : dashboard.volunteer.codigoAsistenciaActivo ? "Desactivar QR" : "Activar QR"}
+                  </Text>
+                </Pressable>
+              )}
             </View>
           )}
 
@@ -357,6 +435,19 @@ export default function ManagedVolunteerDashboardScreen() {
           </View>
 
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Participantes</Text>
+          {dashboard.participants.some((participant) =>
+            ["inscrita", "activa", "completada"].includes(participant.estadoInscripcion)
+            && !participant.asistencia?.confirmada
+            && !activityCanRecordAttendance
+          ) && (
+            <Text style={[styles.hint, { color: colors.textSecondary }]}>
+              {dashboard.volunteer.cancelado
+                ? "No se puede registrar asistencia porque la actividad fue cancelada."
+                : dashboard.volunteer.iniciadoPorFecha
+                  ? "El registro manual no está disponible para el estado actual de la actividad."
+                  : "El registro manual estará disponible cuando inicie el horario de la actividad."}
+            </Text>
+          )}
           {dashboard.participants.length === 0 ? (
             <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
               <Text style={[styles.muted, { color: colors.textSecondary }]}>
@@ -366,14 +457,30 @@ export default function ManagedVolunteerDashboardScreen() {
           ) : (
             <View style={styles.list}>
               {dashboard.participants.map((participant) => {
-                const eligible = ["inscrita", "activa"].includes(participant.estadoInscripcion);
-                const attended = participant.asistencia?.confirmada === true
-                  || participant.estadoInscripcion === "completada";
+                const eligible = ["inscrita", "activa", "completada"].includes(participant.estadoInscripcion);
+                const attended = participant.asistencia?.confirmada === true;
+                const correction = participant.solicitudAsistencia;
+                const correctionPending = correction?.estado === "pendiente" || correction?.estado === "aceptando";
                 return (
                   <View key={participant.id} style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
-                    <Text style={[styles.cardTitle, { color: colors.text }]}>
-                      {participant.nombre ?? "Participante"}
-                    </Text>
+                    <View style={styles.participantIdentity}>
+                      {participant.foto ? (
+                        <Image
+                          accessibilityLabel={`Foto de ${participant.nombre ?? "participante"}`}
+                          source={{ uri: participant.foto }}
+                          style={styles.participantAvatar}
+                        />
+                      ) : (
+                        <View style={[styles.participantAvatar, styles.participantAvatarFallback, { backgroundColor: colors.backgroundSelected }]}>
+                          <Text style={[styles.participantAvatarInitial, { color: colors.text }]}>
+                            {participant.nombre?.trim().charAt(0).toLocaleUpperCase("es-MX") ?? "P"}
+                          </Text>
+                        </View>
+                      )}
+                      <Text style={[styles.cardTitle, styles.participantName, { color: colors.text }]}>
+                        {participant.nombre ?? "Participante"}
+                      </Text>
+                    </View>
                     {!!participant.usuarioId && (
                       <Pressable
                         accessibilityRole="link"
@@ -389,7 +496,17 @@ export default function ManagedVolunteerDashboardScreen() {
                       Inscripción: {participant.estadoInscripcion}
                       {participant.asistencia?.metodo ? ` · Asistencia ${participant.asistencia.metodo}` : ""}
                     </Text>
-                    {(user?.rol === "organizador" || user?.rol === "admin") && eligible && !attended && (
+                    <Text style={[styles.hint, { color: colors.textSecondary }]}>
+                      Estado de asistencia: {participant.estadoInscripcion === "cancelada"
+                        ? "Inscripción cancelada"
+                        : attended
+                          ? "Asistencia confirmada"
+                          : participant.falto
+                            ? "Falta registrada"
+                            : dashboard.volunteer.cancelado ? "Actividad cancelada" : "Pendiente"}
+                    </Text>
+                    {(user?.rol === "organizador" || user?.rol === "admin")
+                      && eligible && !attended && !correctionPending && activityCanRecordAttendance && (
                       <Pressable
                         disabled={workingUserId === participant.usuarioId}
                         onPress={() => void markAttendance(participant.usuarioId)}
@@ -401,6 +518,86 @@ export default function ManagedVolunteerDashboardScreen() {
                       </Pressable>
                     )}
                     {attended && <Text style={styles.successText}>Asistencia confirmada</Text>}
+                    {correction && (
+                      <View style={[styles.correctionBox, { backgroundColor: colors.backgroundSelected }]}>
+                        <Text style={[styles.hint, { color: colors.text }]}>
+                          Solicitud de revisión: {correction.estado}
+                          {correction.estado === "rechazada" && correction.motivoRespuesta
+                            ? ` · Motivo: ${correction.motivoRespuesta}`
+                            : ""}
+                        </Text>
+                        {correction.estado === "pendiente" && (
+                          <View style={styles.correctionActions}>
+                            <Pressable
+                              accessibilityRole="button"
+                              disabled={workingRequestId === correction.id}
+                              onPress={() => void respondToCorrection(correction.id, "aceptar")}
+                              style={[styles.primaryButton, workingRequestId === correction.id && styles.disabled]}
+                            >
+                              <Text style={styles.primaryButtonText}>
+                                {workingRequestId === correction.id ? "Procesando…" : "Aceptar solicitud"}
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              accessibilityRole="button"
+                              disabled={workingRequestId === correction.id}
+                              onPress={() => {
+                                setRejectRequestId(correction.id);
+                                setRejectionReason("");
+                              }}
+                              style={styles.secondaryButton}
+                            >
+                              <Text style={styles.secondaryButtonText}>Rechazar</Text>
+                            </Pressable>
+                          </View>
+                        )}
+                        {correction.estado === "aceptando" && (
+                          <Text style={[styles.hint, { color: colors.textSecondary }]}>
+                            Confirmando la asistencia…
+                          </Text>
+                        )}
+                        {rejectRequestId === correction.id && correction.estado === "pendiente" && (
+                          <View style={styles.rejectForm}>
+                            <Text style={[styles.hint, { color: colors.text }]}>Motivo del rechazo (opcional)</Text>
+                            <TextInput
+                              accessibilityLabel="Motivo del rechazo de asistencia"
+                              editable={workingRequestId !== correction.id}
+                              maxLength={1000}
+                              multiline
+                              onChangeText={setRejectionReason}
+                              placeholder="Escribe un motivo si lo deseas"
+                              placeholderTextColor={colors.textSecondary}
+                              style={[styles.rejectionInput, { color: colors.text, borderColor: colors.backgroundSelected }]}
+                              value={rejectionReason}
+                            />
+                            <View style={styles.correctionActions}>
+                              <Pressable
+                                accessibilityRole="button"
+                                disabled={workingRequestId === correction.id}
+                                onPress={() => void respondToCorrection(
+                                  correction.id,
+                                  "rechazar",
+                                  rejectionReason.trim(),
+                                )}
+                                style={[styles.dangerButton, workingRequestId === correction.id && styles.disabled]}
+                              >
+                                <Text style={styles.dangerButtonText}>
+                                  {workingRequestId === correction.id ? "Procesando…" : "Confirmar rechazo"}
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                accessibilityRole="button"
+                                disabled={workingRequestId === correction.id}
+                                onPress={() => setRejectRequestId(null)}
+                                style={styles.secondaryButton}
+                              >
+                                <Text style={styles.secondaryButtonText}>Cancelar</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                        )}
+                      </View>
+                    )}
                   </View>
                 );
               })}
@@ -459,6 +656,15 @@ const styles = StyleSheet.create({
   card: { padding: 16, borderRadius: 18, gap: 9 },
   list: { gap: 10 },
   cardTitle: { fontSize: 16, fontWeight: "800" },
+  participantIdentity: { flexDirection: "row", alignItems: "center", gap: 10 },
+  participantName: { flex: 1 },
+  participantAvatar: { width: 40, height: 40, borderRadius: 20 },
+  participantAvatarFallback: { alignItems: "center", justifyContent: "center" },
+  participantAvatarInitial: { fontSize: 15, fontWeight: "800" },
+  correctionBox: { gap: 9, padding: 11, borderRadius: 13 },
+  correctionActions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10 },
+  rejectForm: { gap: 8, paddingTop: 4 },
+  rejectionInput: { minHeight: 72, borderWidth: 1, borderRadius: 11, paddingHorizontal: 10, paddingVertical: 8, textAlignVertical: "top" },
   impactRecord: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#B7C7BE", paddingTop: 8, gap: 3 },
   impactAmount: { color: "#164F3D", fontSize: 21, fontWeight: "800" },
   metricOptions: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
@@ -475,6 +681,8 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
   secondaryButton: { alignSelf: "flex-start", paddingVertical: 8 },
   secondaryButtonText: { color: "#164F3D", fontSize: 13, fontWeight: "700" },
+  dangerButton: { alignSelf: "flex-start", paddingVertical: 8 },
+  dangerButtonText: { color: "#8C3434", fontSize: 13, fontWeight: "700" },
   disabled: { opacity: 0.6 },
   successText: { color: "#164F3D", fontSize: 13, fontWeight: "700" },
   error: { color: "#9E3030", fontSize: 13, lineHeight: 20 },

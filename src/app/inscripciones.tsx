@@ -164,13 +164,6 @@ export default function EnrollmentsScreen() {
                     <Text style={[styles.muted, { color: colors.textSecondary }]}>
                       {formatDate(volunteer.fecha_inicio)}
                     </Text>
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => router.push(`/voluntariados/${volunteer.id}`)}
-                      style={styles.secondaryButton}
-                    >
-                      <Text style={styles.secondaryButtonText}>Ver actividad</Text>
-                    </Pressable>
                   </>
                 )}
                 {!volunteer && (
@@ -180,6 +173,15 @@ export default function EnrollmentsScreen() {
                       : "Esta actividad ya no aparece entre las publicadas."}
                   </Text>
                 )}
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => router.push(`/voluntariados/${enrollment.voluntariadoId}`)}
+                  style={styles.secondaryButton}
+                >
+                  <Text style={styles.secondaryButtonText}>
+                    {volunteer ? "Ver actividad" : "Ver actividad y asistencia"}
+                  </Text>
+                </Pressable>
                 {active && confirmingId === enrollment.id ? (
                   <View style={styles.confirmActions}>
                     <Text style={[styles.muted, { color: colors.textSecondary }]}>
