@@ -26,17 +26,53 @@ export function resolveApiAssetUrl(value: string | null | undefined): string | n
   }
 }
 
+export type ApiFieldErrors = Record<string, string>;
+
+export type ApiErrorDetails = {
+  code?: string | null;
+  fieldErrors?: ApiFieldErrors;
+};
+
 export class ApiRequestError extends Error {
   readonly status: number;
+  readonly code: string | null;
+  readonly fieldErrors: ApiFieldErrors;
 
   constructor(
     message: string,
     status: number,
+    details: ApiErrorDetails = {},
   ) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
+    this.code = details.code ?? null;
+    this.fieldErrors = details.fieldErrors ?? {};
   }
+}
+
+// Laravel returns validation errors as { campo: ["mensaje", ...] }; keep the first message per field.
+export function parseFieldErrors(value: unknown): ApiFieldErrors {
+  if (!isRecord(value)) return {};
+  const result: ApiFieldErrors = {};
+  for (const [field, messages] of Object.entries(value)) {
+    const first = Array.isArray(messages) ? messages.find((item) => typeof item === "string") : messages;
+    if (typeof first === "string" && first.trim()) result[field] = first;
+  }
+  return result;
+}
+
+export function fieldErrorsFrom(error: unknown): ApiFieldErrors {
+  return error != null && typeof error === "object" && "fieldErrors" in error
+    ? (error as { fieldErrors: ApiFieldErrors }).fieldErrors
+    : {};
+}
+
+export function errorCodeFrom(error: unknown): string | null {
+  return error != null && typeof error === "object" && "code" in error
+    && typeof (error as { code: unknown }).code === "string"
+    ? (error as { code: string }).code
+    : null;
 }
 
 export type ApiRequestOptions = {
@@ -44,6 +80,7 @@ export type ApiRequestOptions = {
   token?: string;
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
+  formData?: FormData;
 };
 
 export async function requestApiJson(
@@ -59,7 +96,9 @@ export async function requestApiJson(
         ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
         ...(options.token ? { Authorization: `Bearer ${options.token}` } : {}),
       },
-      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+      ...(options.formData
+        ? { body: options.formData }
+        : options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
       signal: options.signal,
     });
   } catch (error) {
@@ -78,7 +117,11 @@ export async function requestApiJson(
     const message = isRecord(body) && typeof body.message === "string"
       ? body.message
       : `La API respondió con un error (HTTP ${response.status}).`;
-    throw new ApiRequestError(message, response.status);
+    const fieldErrors = isRecord(body) ? parseFieldErrors(body.errors) : {};
+    throw new ApiRequestError(message, response.status, {
+      code: isRecord(body) && typeof body.code === "string" ? body.code : null,
+      fieldErrors,
+    });
   }
 
   return body;

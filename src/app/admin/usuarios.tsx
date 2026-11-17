@@ -116,6 +116,9 @@ export default function AdminUsersScreen() {
                 {roleLabel(item.rol)}{item.rol === "organizador" ? ` · ${item.organizadorVerificado ? "Verificado" : "Sin verificar"}` : ""}
               </Text>
               <View style={styles.actions}>
+                <Pressable onPress={() => router.push({ pathname: "/perfiles/[id]", params: { id: item.id } })} style={styles.secondaryButton}>
+                  <Text style={styles.secondaryText}>Ver perfil</Text>
+                </Pressable>
                 <Pressable onPress={() => router.push({ pathname: "/admin/usuario-editor", params: { id: item.id } })} style={styles.secondaryButton}>
                   <Text style={styles.secondaryText}>Editar cuenta</Text>
                 </Pressable>

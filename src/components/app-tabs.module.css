@@ -1,0 +1,9 @@
+.brandLabel {
+  display: none;
+}
+
+@media (min-width: 520px) {
+  .brandLabel {
+    display: block;
+  }
+}

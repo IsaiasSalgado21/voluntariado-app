@@ -1,4 +1,5 @@
-import { ApiRequestError, requestApiJson } from "../api-client.ts";
+import { ApiRequestError, requestApiJson, type ApiFieldErrors } from "../api-client.ts";
+import type { ProfileDetails, ProfilePayload, TutorDetails } from "./profile.ts";
 
 export type AuthUser = {
   id: string;
@@ -9,6 +10,9 @@ export type AuthUser = {
   foto: string | null;
   organizadorVerificado: boolean | null;
   fechaRegistro: string | null;
+  perfilCompleto: boolean | null;
+  avatarConfig: Record<string, string> | null;
+  details: ProfileDetails | null;
 };
 
 export type AuthResult = {
@@ -18,11 +22,19 @@ export type AuthResult = {
 
 export class AuthenticationError extends Error {
   readonly status: number;
+  readonly code: string | null;
+  readonly fieldErrors: ApiFieldErrors;
 
-  constructor(message: string, status: number) {
+  constructor(
+    message: string,
+    status: number,
+    details: { code?: string | null; fieldErrors?: ApiFieldErrors } = {},
+  ) {
     super(message);
     this.name = "AuthenticationError";
     this.status = status;
+    this.code = details.code ?? null;
+    this.fieldErrors = details.fieldErrors ?? {};
   }
 }
 
@@ -60,6 +72,54 @@ function parseUser(value: unknown, includeProfileFields: boolean): AuthUser {
       ? value.organizadorVerificado
       : null,
     fechaRegistro: typeof value.fechaRegistro === "string" ? value.fechaRegistro : null,
+    perfilCompleto: typeof value.perfilCompleto === "boolean" ? value.perfilCompleto : null,
+    avatarConfig: parseAvatarConfig(value.avatarConfig),
+    details: includeProfileFields ? parseProfileDetails(value) : null,
+  };
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+function parseAvatarConfig(value: unknown): Record<string, string> | null {
+  if (!isRecord(value)) return null;
+  const config: Record<string, string> = {};
+  for (const [key, option] of Object.entries(value)) {
+    if (typeof option === "string") config[key] = option;
+  }
+  return Object.keys(config).length > 0 ? config : null;
+}
+
+function parseTutor(value: unknown): TutorDetails | null {
+  if (!isRecord(value)) return null;
+  return {
+    nombre: nullableString(value.nombre),
+    correo: nullableString(value.correo),
+    telefono: nullableString(value.telefono),
+    fechaNacimiento: nullableString(value.fechaNacimiento),
+    autorizacion: value.autorizacion === true,
+  };
+}
+
+function parseProfileDetails(value: Record<string, unknown>): ProfileDetails | null {
+  const known = ["correoSecundario", "ciudad", "genero", "fechaNacimiento", "privacidad"];
+  if (!known.some((key) => key in value)) return null;
+
+  return {
+    correoSecundario: nullableString(value.correoSecundario),
+    telefono: nullableString(value.telefono),
+    descripcion: nullableString(value.descripcion),
+    ciudad: nullableString(value.ciudad),
+    fechaNacimiento: nullableString(value.fechaNacimiento)?.slice(0, 10) ?? null,
+    genero: nullableString(value.genero),
+    generoOtro: nullableString(value.generoOtro),
+    organizacion: nullableString(value.organizacion),
+    enlacesSociales: Array.isArray(value.enlacesSociales)
+      ? value.enlacesSociales.filter((item): item is string => typeof item === "string")
+      : [],
+    privacidad: value.privacidad === true,
+    tutor: parseTutor(value.tutor),
   };
 }
 
@@ -86,7 +146,10 @@ export function parseProfileUser(value: unknown): AuthUser {
 
 function throwAuthenticationError(error: unknown): never {
   if (error instanceof ApiRequestError) {
-    throw new AuthenticationError(error.message, error.status);
+    throw new AuthenticationError(error.message, error.status, {
+      code: error.code,
+      fieldErrors: error.fieldErrors,
+    });
   }
   throw error;
 }
@@ -108,6 +171,7 @@ export async function register(
   correo: string,
   password: string,
   passwordConfirmation: string,
+  profile: ProfilePayload,
 ): Promise<AuthResult> {
   try {
     const body = await requestApiJson("/api/auth/register", {
@@ -117,6 +181,7 @@ export async function register(
         correo,
         password,
         password_confirmation: passwordConfirmation,
+        ...profile,
       },
     });
     return parseAuthResult(body);

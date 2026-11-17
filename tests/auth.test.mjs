@@ -24,6 +24,71 @@ const profileUser = {
   fechaRegistro: "2026-01-10T12:00:00.000Z",
 };
 
+const registrationProfile = {
+  correoSecundario: "ana.respaldo@example.test",
+  telefono: null,
+  descripcion: null,
+  ciudad: "La Paz",
+  fechaNacimiento: "2000-05-20",
+  genero: "mujer",
+  generoOtro: null,
+  privacidad: false,
+};
+
+test("parses profile details, completeness, and avatar configuration from /auth/me", () => {
+  const user = parseProfileUser({
+    ...profileUser,
+    perfilCompleto: false,
+    avatarConfig: { skin: "dark", hairStyle: "curly", invalid: 3 },
+    correoSecundario: "ana.respaldo@example.test",
+    ciudad: "La Paz",
+    fechaNacimiento: "2000-05-20",
+    genero: "otro",
+    generoOtro: "No binario",
+    privacidad: true,
+    enlacesSociales: ["https://example.test", 7],
+    tutor: { nombre: "Luis", correo: "luis@example.test", telefono: "+526120000000", fechaNacimiento: "1980-01-01", autorizacion: true },
+  });
+  assert.equal(user.perfilCompleto, false);
+  assert.deepEqual(user.avatarConfig, { skin: "dark", hairStyle: "curly" });
+  assert.equal(user.details?.ciudad, "La Paz");
+  assert.equal(user.details?.privacidad, true);
+  assert.deepEqual(user.details?.enlacesSociales, ["https://example.test"]);
+  assert.equal(user.details?.tutor?.autorizacion, true);
+
+  const legacy = parseProfileUser(profileUser);
+  assert.equal(legacy.perfilCompleto, null);
+  assert.equal(legacy.details, null);
+});
+
+test("keeps the HTTP status, code, and field errors of API failures", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalApiUrl = process.env.EXPO_PUBLIC_REGENERA_API_URL;
+  process.env.EXPO_PUBLIC_REGENERA_API_URL = "https://api.example.test";
+  globalThis.fetch = async () => new Response(
+    JSON.stringify({
+      message: "Los datos enviados no son válidos.",
+      code: "perfil_incompleto",
+      errors: { correoSecundario: ["El correo secundario debe ser distinto del principal."], "tutor.nombre": ["Obligatorio."] },
+    }),
+    { status: 422, headers: { "Content-Type": "application/json" } },
+  );
+
+  try {
+    await assert.rejects(register("Ana", "ana@example.test", "password123", "password123", registrationProfile), (error) => {
+      assert.equal(error.status, 422);
+      assert.equal(error.code, "perfil_incompleto");
+      assert.equal(error.fieldErrors.correoSecundario, "El correo secundario debe ser distinto del principal.");
+      assert.equal(error.fieldErrors["tutor.nombre"], "Obligatorio.");
+      return true;
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalApiUrl === undefined) delete process.env.EXPO_PUBLIC_REGENERA_API_URL;
+    else process.env.EXPO_PUBLIC_REGENERA_API_URL = originalApiUrl;
+  }
+});
+
 test("parses login and full profile responses without exposing credentials", () => {
   const result = parseAuthResult({
     success: true,
@@ -84,13 +149,14 @@ test("uses the existing login, register, me, and logout contracts", async () => 
     assert.deepEqual(requests[0].body, { correo: "ana@example.test", password: "password" });
     assert.equal(requests[0].method, "POST");
 
-    const signedUp = await register("Ana Ejemplo", "ana@example.test", "password123", "password123");
+    const signedUp = await register("Ana Ejemplo", "ana@example.test", "password123", "password123", registrationProfile);
     assert.equal(signedUp.user.id, "user-1");
     assert.deepEqual(requests[1].body, {
       nombre: "Ana Ejemplo",
       correo: "ana@example.test",
       password: "password123",
       password_confirmation: "password123",
+      ...registrationProfile,
     });
 
     const user = await fetchCurrentUser("sanctum-token");

@@ -374,6 +374,14 @@ export default function ManagedVolunteerDashboardScreen() {
                     <Text style={[styles.cardTitle, { color: colors.text }]}>
                       {participant.nombre ?? "Participante"}
                     </Text>
+                    {!!participant.usuarioId && (
+                      <Pressable
+                        accessibilityRole="link"
+                        onPress={() => router.push({ pathname: "/perfiles/[id]", params: { id: participant.usuarioId } })}
+                      >
+                        <Text style={styles.successText}>Ver perfil público</Text>
+                      </Pressable>
+                    )}
                     {!!participant.correo && (
                       <Text style={[styles.hint, { color: colors.textSecondary }]}>{participant.correo}</Text>
                     )}

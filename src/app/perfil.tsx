@@ -115,9 +115,17 @@ export default function ProfileScreen() {
           {user.fechaRegistro && (
             <ProfileFact label="Miembro desde" value={formatDate(user.fechaRegistro)} colors={colors} />
           )}
-          <Text style={[styles.readOnlyNote, { color: colors.textSecondary }]}>
-            Los datos del perfil son de solo lectura por ahora.
-          </Text>
+          {user.details?.ciudad && <ProfileFact label="Ciudad" value={user.details.ciudad} colors={colors} />}
+          {user.details?.correoSecundario && (
+            <ProfileFact label="Correo secundario" value={user.details.correoSecundario} colors={colors} />
+          )}
+          {user.details?.telefono && <ProfileFact label="Teléfono" value={user.details.telefono} colors={colors} />}
+          {user.details?.descripcion && (
+            <ProfileFact label="Descripción" value={user.details.descripcion} colors={colors} />
+          )}
+          {user.details?.organizacion && (
+            <ProfileFact label="Organización" value={user.details.organizacion} colors={colors} />
+          )}
         </View>
       ) : (
         <View style={[styles.profileCard, { backgroundColor: colors.backgroundElement }]}>
@@ -134,6 +142,27 @@ export default function ProfileScreen() {
         <Text accessibilityRole="alert" style={styles.errorText}>
           {actionError ?? error}
         </Text>
+      )}
+
+      {user && (
+        <View style={styles.menu}>
+          <Pressable accessibilityRole="button" onPress={() => router.push("/perfil/editar")} style={styles.primaryButton}>
+            <Text style={styles.primaryButtonText}>Editar perfil</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => router.push("/perfil/avatar")} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>Personalizar avatar</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => router.push("/perfil/cuenta")} style={styles.secondaryButton}>
+            <Text style={styles.secondaryButtonText}>Correo y contraseña</Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.push({ pathname: "/perfiles/[id]", params: { id: user.id } })}
+            style={styles.secondaryButton}
+          >
+            <Text style={styles.secondaryButtonText}>Ver mi perfil público</Text>
+          </Pressable>
+        </View>
       )}
 
       {user ? (
@@ -232,6 +261,7 @@ const styles = StyleSheet.create({
   fact: { alignSelf: "stretch", gap: 3, paddingVertical: 3 },
   factLabel: { fontSize: 12, fontWeight: "700" },
   factValue: { fontSize: 14 },
+  menu: { gap: 10 },
   readOnlyNote: { fontSize: 12, lineHeight: 18, textAlign: "center", marginTop: 8 },
   errorText: { color: "#A14537", fontSize: 13, lineHeight: 19, textAlign: "center" },
   primaryButton: { width: "100%", minHeight: 48, borderRadius: 14, backgroundColor: "#164F3D", justifyContent: "center", alignItems: "center", paddingHorizontal: 16, marginTop: 4 },

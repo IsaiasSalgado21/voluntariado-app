@@ -1,5 +1,6 @@
 import { createContext } from "react";
 import type { AuthUser } from "./api";
+import type { ProfilePayload } from "./profile";
 
 export type SessionStatus = "loading" | "unauthenticated" | "authenticated";
 
@@ -14,6 +15,7 @@ export type SessionContextValue = {
     email: string,
     password: string,
     passwordConfirmation: string,
+    profile: ProfilePayload,
   ) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;

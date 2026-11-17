@@ -8,6 +8,7 @@ import {
   AuthenticationError,
 } from "@/features/auth/api";
 import { SessionContext, type SessionContextValue } from "@/features/auth/session-context";
+import type { ProfilePayload } from "@/features/auth/profile";
 import { readAuthToken, removeAuthToken, saveAuthToken } from "@/features/auth/token-storage";
 import { useCallback, useEffect, useMemo, useState, type PropsWithChildren } from "react";
 
@@ -24,6 +25,16 @@ const initialState: SessionState = {
   user: null,
   error: null,
 };
+
+// 401 means an expired token; 403 edad_minima means the account is blocked for being under 13.
+function isSessionRejected(error: unknown): error is AuthenticationError {
+  return error instanceof AuthenticationError
+    && (error.status === 401 || (error.status === 403 && error.code === "edad_minima"));
+}
+
+function rejectedMessage(error: AuthenticationError, fallback: string): string {
+  return error.status === 403 ? error.message : fallback;
+}
 
 export function SessionProvider({ children }: PropsWithChildren) {
   const [session, setSession] = useState(initialState);
@@ -45,13 +56,13 @@ export function SessionProvider({ children }: PropsWithChildren) {
           if (active) setSession({ status: "authenticated", token, user, error: null });
         } catch (error) {
           if (!active) return;
-          if (error instanceof AuthenticationError && error.status === 401) {
+          if (isSessionRejected(error)) {
             await removeAuthToken();
             setSession({
               status: "unauthenticated",
               token: null,
               user: null,
-              error: "Tu sesión venció. Inicia sesión de nuevo.",
+              error: rejectedMessage(error, "Tu sesión venció. Inicia sesión de nuevo."),
             });
             return;
           }
@@ -98,13 +109,13 @@ export function SessionProvider({ children }: PropsWithChildren) {
         error: null,
       });
     } catch (error) {
-      if (error instanceof AuthenticationError && error.status === 401) {
+      if (isSessionRejected(error)) {
         await removeAuthToken();
         setSession({
           status: "unauthenticated",
           token: null,
           user: null,
-          error: "El servidor rechazó la sesión. Intenta iniciar sesión de nuevo.",
+          error: rejectedMessage(error, "El servidor rechazó la sesión. Intenta iniciar sesión de nuevo."),
         });
         return;
       }
@@ -126,8 +137,9 @@ export function SessionProvider({ children }: PropsWithChildren) {
     email: string,
     password: string,
     passwordConfirmation: string,
+    profile: ProfilePayload,
   ) => {
-    const result = await registerRequest(name, email, password, passwordConfirmation);
+    const result = await registerRequest(name, email, password, passwordConfirmation, profile);
     await acceptAuthResult(result);
   }, [acceptAuthResult]);
 
@@ -140,13 +152,13 @@ export function SessionProvider({ children }: PropsWithChildren) {
       const user = await fetchCurrentUser(session.token);
       setSession((current) => ({ ...current, user, error: null }));
     } catch (error) {
-      if (error instanceof AuthenticationError && error.status === 401) {
+      if (isSessionRejected(error)) {
         await removeAuthToken();
         setSession({
           status: "unauthenticated",
           token: null,
           user: null,
-          error: "Tu sesión venció. Inicia sesión de nuevo.",
+          error: rejectedMessage(error, "Tu sesión venció. Inicia sesión de nuevo."),
         });
       } else {
         setSession((current) => ({

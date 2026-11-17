@@ -3,6 +3,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { ProfileGate } from '@/features/auth/profile-gate';
 import { SessionProvider } from '@/features/auth/session-provider';
 
 SplashScreen.preventAutoHideAsync();
@@ -13,6 +14,7 @@ export default function TabLayout() {
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <SessionProvider>
         <AnimatedSplashOverlay />
+        <ProfileGate />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="voluntariados/[id]" />
@@ -21,6 +23,11 @@ export default function TabLayout() {
           <Stack.Screen name="articulos/[id]" />
           <Stack.Screen name="login" />
           <Stack.Screen name="perfil" />
+          <Stack.Screen name="completar-perfil" />
+          <Stack.Screen name="perfil/editar" />
+          <Stack.Screen name="perfil/cuenta" />
+          <Stack.Screen name="perfil/avatar" />
+          <Stack.Screen name="perfiles/[id]" />
           <Stack.Screen name="inscripciones" />
           <Stack.Screen name="notificaciones" />
           <Stack.Screen name="dashboard" />

@@ -15,6 +15,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useSession } from "@/features/auth/use-session";
+import { ProfileFields } from "@/features/auth/profile-form";
+import {
+  emptyProfileForm,
+  mapApiFieldErrors,
+  validateProfileForm,
+  type ProfileFormErrors,
+  type ProfileFormValues,
+} from "@/features/auth/profile";
+import { AuthenticationError } from "@/features/auth/api";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -27,6 +36,8 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirmation, setPasswordConfirmation] = useState("");
+  const [profile, setProfile] = useState<ProfileFormValues>(emptyProfileForm);
+  const [fieldErrors, setFieldErrors] = useState<ProfileFormErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -36,12 +47,14 @@ export default function LoginScreen() {
 
   const switchMode = () => {
     setError(null);
+    setFieldErrors({});
     clearError();
     setIsRegistering((current) => !current);
   };
 
   const submit = async () => {
     setError(null);
+    setFieldErrors({});
     clearError();
     const normalizedEmail = email.trim().toLocaleLowerCase("es-MX");
 
@@ -68,14 +81,28 @@ export default function LoginScreen() {
       }
     }
 
+    let payload = null;
+    if (isRegistering) {
+      const result = validateProfileForm(profile, { email: normalizedEmail });
+      if (!result.payload) {
+        setFieldErrors(result.errors);
+        setError("Revisa los campos marcados.");
+        return;
+      }
+      payload = result.payload;
+    }
+
     setSubmitting(true);
     try {
-      if (isRegistering) {
-        await register(name.trim(), normalizedEmail, password, passwordConfirmation);
+      if (isRegistering && payload) {
+        await register(name.trim(), normalizedEmail, password, passwordConfirmation, payload);
       } else {
         await login(normalizedEmail, password);
       }
     } catch (cause) {
+      if (cause instanceof AuthenticationError && cause.fieldErrors) {
+        setFieldErrors(mapApiFieldErrors(cause.fieldErrors));
+      }
       setError(cause instanceof Error ? cause.message : "No se pudo completar la solicitud.");
     } finally {
       setSubmitting(false);
@@ -161,7 +188,14 @@ export default function LoginScreen() {
               colors={colors}
               secureTextEntry
               autoComplete="new-password"
-              onSubmitEditing={submit}
+            />
+          )}
+          {isRegistering && (
+            <ProfileFields
+              values={profile}
+              errors={fieldErrors}
+              colors={colors}
+              onChange={(patch) => setProfile((current) => ({ ...current, ...patch }))}
             />
           )}
         </View>
