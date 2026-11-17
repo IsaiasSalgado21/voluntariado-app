@@ -5,6 +5,8 @@ export type DateTimePickerEvent = {
 export type DateTimePickerProps = {
   value: Date;
   mode: "date" | "time";
+  maximumDate?: Date;
+  locale?: string;
   onChange: (event: DateTimePickerEvent, value?: Date) => void;
 };
 

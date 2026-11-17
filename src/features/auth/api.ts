@@ -38,6 +38,11 @@ export class AuthenticationError extends Error {
   }
 }
 
+export function isUnauthorizedError(error: unknown): boolean {
+  return (error instanceof ApiRequestError || error instanceof AuthenticationError)
+    && error.status === 401;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -4,13 +4,22 @@ import type { DateTimePickerProps } from "./date-time-picker";
 
 export type { DateTimePickerEvent } from "./date-time-picker";
 
-export default function DateTimePicker({ value, mode, onChange }: DateTimePickerProps) {
+export default function DateTimePicker({
+  value,
+  mode,
+  maximumDate,
+  locale,
+  onChange,
+}: DateTimePickerProps) {
   return (
     <View>
       <NativeDateTimePicker
         value={value}
         mode={mode}
-        display={Platform.OS === "ios" ? "spinner" : "default"}
+        display={mode === "date" || Platform.OS === "ios" ? "spinner" : "default"}
+        maximumDate={maximumDate}
+        locale={locale}
+        style={Platform.OS === "ios" && mode === "date" ? { height: 216 } : undefined}
         onChange={(event, selectedDate) => onChange({ type: event.type }, selectedDate)}
       />
       {Platform.OS === "ios" && (

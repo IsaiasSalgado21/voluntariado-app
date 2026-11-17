@@ -1,6 +1,6 @@
-import { ApiRequestError } from "@/features/api-client";
 import {
   fetchCurrentUser,
+  isUnauthorizedError,
   login as loginRequest,
   logout as logoutRequest,
   register as registerRequest,
@@ -178,7 +178,7 @@ export function SessionProvider({ children }: PropsWithChildren) {
       try {
         await logoutRequest(token);
       } catch (error) {
-        if (!(error instanceof ApiRequestError && error.status === 401)) {
+        if (!isUnauthorizedError(error)) {
           remoteError = error;
         }
       }

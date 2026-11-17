@@ -1,6 +1,6 @@
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
@@ -62,6 +62,17 @@ export default function CompleteProfileScreen() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (cause) {
+      Alert.alert(
+        "No se pudo confirmar el cierre de sesión",
+        cause instanceof Error ? cause.message : "Inténtalo de nuevo.",
+      );
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
@@ -100,7 +111,7 @@ export default function CompleteProfileScreen() {
         )}
 
         <View style={styles.footer}>
-          <Pressable accessibilityRole="button" onPress={() => logout()} style={styles.secondaryButton}>
+          <Pressable accessibilityRole="button" onPress={() => void handleLogout()} style={styles.secondaryButton}>
             <Text style={[styles.secondaryText, { color: colors.textSecondary }]}>Cerrar sesión</Text>
           </Pressable>
         </View>

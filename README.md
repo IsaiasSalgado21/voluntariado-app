@@ -59,6 +59,9 @@ Mi perfil uses the existing `POST /api/auth/login`, `POST /api/auth/register`,
 the Sanctum bearer token is stored with Expo SecureStore; web keeps it in memory
 only. Profile data is read-only because the API does not expose a self-service
 profile update route. Editing users remains an admin-only API operation.
+Registration and required-profile completion use horizontal day/month/year
+numeric fields on iOS and an Android spinner dialog, while sending the date to
+the API as `YYYY-MM-DD`.
 
 The volunteer detail screen uses the authenticated enrollment endpoints:
 `POST /api/inscripciones`, `GET /api/inscripciones/voluntariado/{id}/mia`, and

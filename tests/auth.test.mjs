@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  AuthenticationError,
   fetchCurrentUser,
+  isUnauthorizedError,
   login,
   logout,
   parseAuthResult,
   parseProfileUser,
   register,
 } from "../src/features/auth/api.ts";
+import { ApiRequestError } from "../src/features/api-client.ts";
 
 const loginUser = {
   id: "user-1",
@@ -114,6 +117,13 @@ test("rejects malformed or incomplete authentication responses", () => {
     () => parseAuthResult({ success: true, token: "token", usuario: { ...loginUser, rol: 4 } }),
     /perfil válido/,
   );
+});
+
+test("treats a 401 during logout as an already invalidated server session", () => {
+  assert.equal(isUnauthorizedError(new AuthenticationError("Unauthenticated.", 401)), true);
+  assert.equal(isUnauthorizedError(new ApiRequestError("Unauthenticated.", 401)), true);
+  assert.equal(isUnauthorizedError(new AuthenticationError("Forbidden.", 403)), false);
+  assert.equal(isUnauthorizedError(new Error("Network unavailable.")), false);
 });
 
 test("uses the existing login, register, me, and logout contracts", async () => {

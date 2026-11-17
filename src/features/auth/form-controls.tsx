@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Platform, Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import { DateTimePickerAndroid } from "@react-native-community/datetimepicker";
 import { Colors } from "@/constants/theme";
-import DateTimePicker from "@/features/organizador/date-time-picker";
 import { formatIsoDate, parseIsoDate } from "@/features/auth/profile";
 
 export type ThemeColors = (typeof Colors)[keyof typeof Colors];
@@ -53,7 +53,35 @@ export function DateField({
   colors: ThemeColors;
   defaultDate: Date;
 }) {
-  const [open, setOpen] = useState(false);
+  const [dateParts, setDateParts] = useState(() => datePartsFromIso(value));
+  const [editingDate, setEditingDate] = useState(false);
+
+  useEffect(() => {
+    if (!editingDate) setDateParts(datePartsFromIso(value));
+  }, [value, editingDate]);
+
+  const updateDatePart = (part: keyof DateParts, nextValue: string) => {
+    const digits = nextValue.replace(/\D/g, "");
+    const maxLength = part === "year" ? 4 : 2;
+    const nextParts = {
+      ...dateParts,
+      [part]: digits.slice(0, maxLength),
+    };
+    setDateParts(nextParts);
+    setEditingDate(true);
+
+    if (nextParts.day && nextParts.month && nextParts.year.length === 4) {
+      const isoDate = `${nextParts.year}-${nextParts.month.padStart(2, "0")}-${nextParts.day.padStart(2, "0")}`;
+      const date = parseIsoDate(isoDate);
+      if (date && date.getTime() <= Date.now()) {
+        onChange(isoDate);
+        setEditingDate(false);
+        return;
+      }
+    }
+
+    onChange("");
+  };
 
   if (Platform.OS === "web") {
     return (
@@ -69,33 +97,83 @@ export function DateField({
     );
   }
 
+  if (Platform.OS === "ios") {
+    return (
+      <View style={styles.field}>
+        <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
+        <View style={styles.datePartsRow}>
+          {([
+            ["day", "Día", "DD", 2],
+            ["month", "Mes", "MM", 2],
+            ["year", "Año", "AAAA", 4],
+          ] as const).map(([part, partLabel, placeholder, maxLength]) => (
+            <View key={part} style={styles.datePartField}>
+              <Text style={[styles.datePartLabel, { color: colors.textSecondary }]}>{partLabel}</Text>
+              <TextInput
+                accessibilityLabel={`${label}, ${partLabel}`}
+                keyboardType="number-pad"
+                maxLength={maxLength}
+                onChangeText={(text) => updateDatePart(part, text)}
+                placeholder={placeholder}
+                placeholderTextColor={colors.textSecondary}
+                style={[
+                  styles.input,
+                  styles.datePartInput,
+                  { color: colors.text, backgroundColor: colors.backgroundElement },
+                  !!error && styles.inputError,
+                ]}
+                value={dateParts[part]}
+              />
+            </View>
+          ))}
+        </View>
+        <Text style={[styles.hint, { color: colors.textSecondary }]}>
+          Ingresa día, mes y año. La fecha no puede ser futura.
+        </Text>
+        {!!error && <Text accessibilityRole="alert" style={styles.errorText}>{error}</Text>}
+      </View>
+    );
+  }
+
   const selected = parseIsoDate(value);
+  const displayValue = selected
+    ? `${String(selected.getDate()).padStart(2, "0")}/${String(selected.getMonth() + 1).padStart(2, "0")}/${selected.getFullYear()}`
+    : "";
   return (
     <View style={styles.field}>
       <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${label}: ${value || "sin seleccionar"}`}
-        onPress={() => setOpen((current) => !current)}
+        accessibilityLabel={`${label}: ${displayValue || "sin seleccionar"}`}
+        onPress={() => DateTimePickerAndroid.open({
+          value: selected ?? defaultDate,
+          mode: "date",
+          display: "spinner",
+          design: "default",
+          maximumDate: new Date(),
+          onValueChange: (_event, date) => onChange(formatIsoDate(date)),
+        })}
         style={[styles.input, styles.dateButton, { backgroundColor: colors.backgroundElement }, !!error && styles.inputError]}
       >
         <Text style={{ color: value ? colors.text : colors.textSecondary, fontSize: 16 }}>
-          {value || "Selecciona una fecha"}
+          {displayValue || "Día / Mes / Año"}
         </Text>
       </Pressable>
-      {open && (
-        <DateTimePicker
-          value={selected ?? defaultDate}
-          mode="date"
-          onChange={(event, date) => {
-            if (event.type !== "dismissed" && date) onChange(formatIsoDate(date));
-            if (event.type === "dismissed" || Platform.OS === "android") setOpen(false);
-          }}
-        />
-      )}
       {!!error && <Text accessibilityRole="alert" style={styles.errorText}>{error}</Text>}
     </View>
   );
+}
+
+type DateParts = { day: string; month: string; year: string };
+
+function datePartsFromIso(value: string): DateParts {
+  const date = parseIsoDate(value);
+  if (!date) return { day: "", month: "", year: "" };
+  return {
+    day: String(date.getDate()),
+    month: String(date.getMonth() + 1),
+    year: String(date.getFullYear()),
+  };
 }
 
 export function ChoiceGroup<T extends string>({
@@ -183,6 +261,10 @@ const styles = StyleSheet.create({
   multiline: { minHeight: 96, paddingTop: 13, textAlignVertical: "top" },
   inputError: { borderWidth: 1, borderColor: "#A14537" },
   dateButton: { justifyContent: "center" },
+  datePartsRow: { flexDirection: "row", gap: 10 },
+  datePartField: { flex: 1, gap: 5 },
+  datePartLabel: { fontSize: 12, fontWeight: "600" },
+  datePartInput: { minHeight: 50, paddingHorizontal: 10, textAlign: "center" },
   hint: { fontSize: 12, lineHeight: 18 },
   errorText: { color: "#A14537", fontSize: 13, lineHeight: 19 },
   choices: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
