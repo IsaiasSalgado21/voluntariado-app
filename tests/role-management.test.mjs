@@ -16,12 +16,19 @@ import {
   updateManagedCommentsDefault,
 } from "../src/features/organizador/api.ts";
 import {
+  deleteAdminArticle,
   fetchAdminUsers,
+  fetchAdminArticles,
+  fetchAdminFloraFauna,
+  fetchAdminPlaces,
   fetchAuditDetail,
   fetchAuditLog,
   fetchModerationQueue,
   deleteAdminUser,
   reviewContent,
+  saveAdminArticle,
+  saveAdminFloraFauna,
+  saveAdminPlace,
   saveAdminUser,
 } from "../src/features/admin/api.ts";
 import {
@@ -77,6 +84,7 @@ function installFetch(handler) {
       method: init.method ?? "GET",
       headers: new Headers(init.headers),
       body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
+      formData: init.body instanceof FormData ? init.body : undefined,
     };
     requests.push(request);
     const response = await handler(request);
@@ -315,8 +323,151 @@ test("uses admin user, moderation, and audit contracts", async () => {
     assert.equal(place.id, "place-1");
     await reviewContent("bearer", place, "archive");
     assert.match(mock.requests.at(-1).url, /\/api\/admin\/lugares\/place-1\/archivar$/);
+    await reviewContent("bearer", { ...place, estado: "pendiente_de_aprobacion" }, "approve");
+    assert.match(mock.requests.at(-1).url, /\/api\/admin\/lugares\/place-1\/aprobar$/);
+    await reviewContent("bearer", { ...place, estado: "pendiente_de_aprobacion" }, "reject", "Sin coordenadas");
+    assert.deepEqual(mock.requests.at(-1).body, { motivo: "Sin coordenadas" });
+    await assert.rejects(
+      reviewContent("bearer", { ...article, estado: "publicado" }, "publish"),
+      /Solo se pueden publicar artículos en borrador/,
+    );
+    await reviewContent("bearer", { ...article, estado: "borrador" }, "publish");
+    assert.match(mock.requests.at(-1).url, /\/api\/admin\/articulos\/article-1\/publicar$/);
+    await reviewContent("bearer", { ...article, estado: "publicado" }, "unpublish");
+    assert.match(mock.requests.at(-1).url, /\/api\/admin\/articulos\/article-1\/despublicar$/);
     assert.equal((await fetchAuditLog("bearer"))[0].id, "audit-1");
     assert.equal((await fetchAuditDetail("bearer", "audit-1")).accion, "aprobar");
+  } finally {
+    mock.restore();
+  }
+});
+
+test("loads admin catalogs and sends multipart create/update operations with image edits", async () => {
+  const place = {
+    id: "place-1",
+    nombre: "Playa",
+    descripcion: "Zona costera.",
+    municipio: "La Paz",
+    direccion: "Malecón",
+    latitud: 24.14,
+    longitud: -110.31,
+    tipo: "playa",
+    imagen: "https://api.example.test/storage/place.jpg",
+    estado: "activo",
+    motivoRechazo: null,
+  };
+  const species = {
+    id: "species-1",
+    nombre: "Cardón",
+    nombreCientifico: "Pachycereus pringlei",
+    tipo: "flora",
+    descripcion: "Cactus nativo.",
+    habitat: "Desierto",
+    estadoConservacion: "preocupación menor",
+    estado: "publicado",
+    imagenes: ["https://api.example.test/storage/cardón.jpg"],
+    ubicacion: { nombre: "Sierra", latitud: 24, longitud: -110 },
+    lugaresRelacionados: [],
+    fuenteInformacion: "CONABIO",
+  };
+  const article = {
+    id: "article-1",
+    titulo: "Cuidado costero",
+    contenido: "Información ambiental.",
+    categoria: "conservación",
+    estado: "borrador",
+    imagenes: ["https://api.example.test/storage/coast.jpg"],
+    imagen: "https://api.example.test/storage/coast.jpg",
+    motivoRechazo: null,
+  };
+  const mock = installFetch((request) => {
+    if (request.method === "GET" && request.url.endsWith("/api/admin/lugares")) return { data: [place] };
+    if (request.method === "GET" && request.url.endsWith("/api/admin/flora-fauna")) return { data: [species] };
+    if (request.method === "GET" && request.url.endsWith("/api/articulos")) return { data: [article] };
+    if (request.url.endsWith("/api/lugares")) return { data: place };
+    if (request.url.endsWith("/api/lugares/place-1")) return { data: place };
+    if (request.url.endsWith("/api/flora-fauna/species-1")) return { data: species };
+    if (request.url.endsWith("/api/articulos/article-1")) return { data: article };
+    if (request.method === "DELETE") return { data: { id: "article-1" } };
+    return { data: article };
+  });
+  try {
+    assert.equal((await fetchAdminPlaces("bearer"))[0].estado, "activo");
+    assert.equal((await fetchAdminFloraFauna("bearer"))[0].imagenes.length, 1);
+    assert.equal((await fetchAdminArticles("bearer"))[0].estado, "borrador");
+
+    const image = {
+      uri: "file:///new.jpg",
+      fileName: "new.jpg",
+      mimeType: "image/jpeg",
+      file: new Blob(["image"], { type: "image/jpeg" }),
+    };
+    await saveAdminPlace("bearer", {
+      nombre: "Playa",
+      descripcion: "",
+      municipio: "La Paz",
+      direccion: "",
+      latitud: "",
+      longitud: "",
+      tipo: "playa",
+      imagen: image,
+      imagenEliminar: false,
+    });
+    const placeRequest = mock.requests.at(-1);
+    assert.equal(placeRequest.url.endsWith("/api/lugares"), true);
+    assert.equal(placeRequest.formData.get("nombre"), "Playa");
+    assert.equal(placeRequest.formData.get("imagen").name, "new.jpg");
+
+    await saveAdminPlace("bearer", {
+      nombre: "Playa",
+      descripcion: "",
+      municipio: "La Paz",
+      direccion: "",
+      latitud: "",
+      longitud: "",
+      tipo: "playa",
+      imagen: null,
+      imagenEliminar: true,
+    }, "place-1");
+    const placeUpdate = mock.requests.at(-1);
+    assert.equal(placeUpdate.method, "POST");
+    assert.equal(placeUpdate.formData.get("_method"), "PUT");
+    assert.equal(placeUpdate.formData.get("imagenEliminar"), "true");
+
+    await saveAdminFloraFauna("bearer", {
+      nombre: "Cardón",
+      nombreCientifico: "Pachycereus pringlei",
+      tipo: "flora",
+      descripcion: "Cactus nativo.",
+      habitat: "Desierto",
+      estadoConservacion: "",
+      ubicacionNombre: "Sierra",
+      latitud: "24",
+      longitud: "-110",
+      fuenteInformacion: "CONABIO",
+      imagenes: [image],
+      imagenesEliminar: [0],
+    }, "species-1");
+    const floraRequest = mock.requests.at(-1);
+    assert.equal(floraRequest.method, "POST");
+    assert.equal(floraRequest.formData.get("_method"), "PUT");
+    assert.equal(floraRequest.formData.get("ubicacion[nombre]"), "Sierra");
+    assert.deepEqual(floraRequest.formData.getAll("imagenesEliminar[]"), ["0"]);
+    assert.equal(floraRequest.formData.getAll("imagenes[]").length, 1);
+
+    await saveAdminArticle("bearer", {
+      titulo: "Cuidado costero",
+      contenido: "Información ambiental.",
+      categoria: "conservación",
+      imagenes: [image],
+      imagenesEliminar: [0],
+    }, "article-1");
+    const articleRequest = mock.requests.at(-1);
+    assert.equal(articleRequest.formData.get("_method"), "PUT");
+    assert.deepEqual(articleRequest.formData.getAll("imagenesEliminar[]"), ["0"]);
+    assert.equal(articleRequest.formData.getAll("imagenes[]").length, 1);
+    await deleteAdminArticle("bearer", "article-1");
+    assert.equal(mock.requests.at(-1).method, "DELETE");
   } finally {
     mock.restore();
   }

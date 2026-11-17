@@ -30,6 +30,7 @@ export default function TabLayout() {
           <Stack.Screen name="perfiles/[id]" />
           <Stack.Screen name="inscripciones" />
           <Stack.Screen name="notificaciones" />
+          <Stack.Screen name="bitacora-impacto" />
           <Stack.Screen name="dashboard" />
           <Stack.Screen name="asistencia-qr" />
           <Stack.Screen name="organizador/voluntariados" />
@@ -38,7 +39,10 @@ export default function TabLayout() {
           <Stack.Screen name="admin/usuarios" />
           <Stack.Screen name="admin/usuario-editor" />
           <Stack.Screen name="admin/moderacion" />
+          <Stack.Screen name="admin/contenido" />
           <Stack.Screen name="admin/auditoria" />
+          <Stack.Screen name="admin/gamificacion/index" />
+          <Stack.Screen name="admin/gamificacion/[attemptId]" />
         </Stack>
       </SessionProvider>
     </ThemeProvider>

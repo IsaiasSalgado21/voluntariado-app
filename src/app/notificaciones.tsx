@@ -12,10 +12,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import {
+  fetchNotificationPreferences,
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead,
+  updateReminderFrequency,
   type AppNotification,
+  type NotificationPreferences,
+  type ReminderFrequency,
 } from "@/features/notificaciones/api";
 import { useSession } from "@/features/auth/use-session";
 
@@ -30,6 +34,12 @@ export default function NotificationsScreen() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [workingId, setWorkingId] = useState<string | null>(null);
   const [markingAll, setMarkingAll] = useState(false);
+  const [preferences, setPreferences] = useState<NotificationPreferences | null>(null);
+  const [frequency, setFrequency] = useState<ReminderFrequency>("milestones");
+  const [preferencesLoading, setPreferencesLoading] = useState(false);
+  const [preferencesError, setPreferencesError] = useState<string | null>(null);
+  const [preferencesRefreshKey, setPreferencesRefreshKey] = useState(0);
+  const [savingFrequency, setSavingFrequency] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -64,6 +74,56 @@ export default function NotificationsScreen() {
       controller.abort();
     };
   }, [status, token, user?.rol, refreshKey]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    void Promise.resolve().then(async () => {
+      if (status !== "authenticated" || !token || user?.rol === "admin") {
+        setPreferencesLoading(false);
+        return;
+      }
+      setPreferencesLoading(true);
+      setPreferencesError(null);
+      try {
+        const result = await fetchNotificationPreferences(token, controller.signal);
+        if (active) {
+          setPreferences(result);
+          setFrequency(result.recordatorioFrecuencia ?? "milestones");
+        }
+      } catch (cause) {
+        if (active && !controller.signal.aborted) {
+          setPreferencesError(cause instanceof Error ? cause.message : "No se pudieron cargar las preferencias.");
+        }
+      } finally {
+        if (active && !controller.signal.aborted) setPreferencesLoading(false);
+      }
+    });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [status, token, user?.rol, preferencesRefreshKey]);
+
+  const saveFrequency = async (nextFrequency: ReminderFrequency) => {
+    if (!token || savingFrequency || nextFrequency === frequency) return;
+    const previousFrequency = frequency;
+    setFrequency(nextFrequency);
+    setSavingFrequency(true);
+    setPreferencesError(null);
+    try {
+      const savedFrequency = await updateReminderFrequency(token, nextFrequency);
+      setFrequency(savedFrequency);
+      setPreferences((current) => current
+        ? { ...current, recordatorioFrecuencia: savedFrequency }
+        : current);
+    } catch (cause) {
+      setFrequency(previousFrequency);
+      setPreferencesError(cause instanceof Error ? cause.message : "No se pudo guardar la preferencia.");
+    } finally {
+      setSavingFrequency(false);
+    }
+  };
 
   const markRead = async (notification: AppNotification) => {
     if (!token || notification.leida) return;
@@ -129,6 +189,58 @@ export default function NotificationsScreen() {
           </Pressable>
         )}
       </View>
+
+      {status === "authenticated" && token && user?.rol !== "admin" && (
+        <View style={[styles.card, styles.preferencesCard, { backgroundColor: colors.backgroundElement }]}>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>Recordatorios de actividades</Text>
+          <Text style={[styles.muted, { color: colors.textSecondary }]}>
+            Elige cuándo recibir recordatorios antes de un voluntariado.
+          </Text>
+          {preferencesLoading ? (
+            <ActivityIndicator color="#164F3D" />
+          ) : preferencesError && !preferences ? (
+            <>
+              <Text accessibilityRole="alert" style={styles.errorText}>{preferencesError}</Text>
+              <Pressable onPress={() => setPreferencesRefreshKey((key) => key + 1)} style={styles.secondaryButton}>
+                <Text style={styles.secondaryButtonText}>Reintentar</Text>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              <View style={styles.frequencyOptions}>
+                {([
+                  ["none", "Desactivados"],
+                  ["milestones", "Un día y una hora antes"],
+                  ["daily", "Una vez al día"],
+                ] as const).map(([value, label]) => (
+                  <Pressable
+                    key={value}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: frequency === value, disabled: savingFrequency }}
+                    disabled={savingFrequency}
+                    onPress={() => void saveFrequency(value)}
+                    style={[styles.frequencyOption, frequency === value && styles.frequencyOptionSelected]}
+                  >
+                    <Text style={[
+                      styles.frequencyText,
+                      { color: frequency === value ? "#164F3D" : colors.text },
+                    ]}>{label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              {savingFrequency && <Text style={[styles.preferenceHint, { color: colors.textSecondary }]}>Guardando preferencia…</Text>}
+              {!!preferencesError && <Text accessibilityRole="alert" style={styles.errorText}>{preferencesError}</Text>}
+              {preferences && (
+                <Text style={[styles.preferenceHint, { color: colors.textSecondary }]}>
+                  Push web del servidor: {preferences.pushDisponible ? "disponible" : "no configurado"}.
+                  {" "}Suscripción push web: {preferences.pushActivo ? "registrada" : "no registrada"}.
+                  {" "}La app móvil aún no registra notificaciones push nativas.
+                </Text>
+              )}
+            </>
+          )}
+        </View>
+      )}
 
       {status === "loading" || loading ? (
         <View style={styles.state}>
@@ -248,6 +360,12 @@ const styles = StyleSheet.create({
   list: { gap: 12 },
   card: { padding: 17, borderRadius: 18, gap: 9 },
   unreadCard: { borderWidth: 1, borderColor: "#A4C3AD" },
+  preferencesCard: { borderWidth: 1, borderColor: "#E0E9E1" },
+  frequencyOptions: { gap: 8, marginTop: 4 },
+  frequencyOption: { minHeight: 44, justifyContent: "center", paddingHorizontal: 13, borderRadius: 12, borderWidth: 1, borderColor: "#D5DED7" },
+  frequencyOptionSelected: { backgroundColor: "#E8F1EA", borderColor: "#164F3D" },
+  frequencyText: { fontSize: 13, fontWeight: "700" },
+  preferenceHint: { fontSize: 12, lineHeight: 18 },
   cardHeading: { flexDirection: "row", alignItems: "center", gap: 9 },
   icon: { fontSize: 19 },
   cardTitle: { flex: 1, fontSize: 16, fontWeight: "800" },

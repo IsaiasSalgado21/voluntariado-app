@@ -5,7 +5,10 @@ export type DashboardAction =
   | "manageVolunteers"
   | "users"
   | "moderation"
-  | "audit";
+  | "manageContent"
+  | "audit"
+  | "impactLog"
+  | "gamificationStats";
 
 export type DashboardCard = {
   icon: string;
@@ -73,6 +76,12 @@ const ORGANIZER_DASHBOARD: RoleDashboard = {
       description: "Consulta participantes y confirma su asistencia.",
       action: "manageVolunteers",
     },
+    {
+      icon: "📈",
+      title: "Bitácora de impacto",
+      description: "Revisa resultados de actividades finalizadas y filtra tus voluntariados.",
+      action: "impactLog",
+    },
   ],
 };
 
@@ -99,10 +108,28 @@ const ADMIN_DASHBOARD: RoleDashboard = {
       action: "moderation",
     },
     {
+      icon: "🗂️",
+      title: "Gestión de contenido",
+      description: "Crea y edita lugares, flora, fauna y artículos; administra sus imágenes.",
+      action: "manageContent",
+    },
+    {
       icon: "📊",
       title: "Auditoría y reportes",
       description: "Consulta las acciones administrativas registradas.",
       action: "audit",
+    },
+    {
+      icon: "🌱",
+      title: "Estadísticas de gamificación",
+      description: "Consulta intentos, aprobaciones, puntos y respuestas de aprendizaje.",
+      action: "gamificationStats",
+    },
+    {
+      icon: "📈",
+      title: "Bitácora de impacto",
+      description: "Filtra las actividades finalizadas y revisa sus resultados.",
+      action: "impactLog",
     },
   ],
 };

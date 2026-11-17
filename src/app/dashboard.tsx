@@ -23,7 +23,10 @@ const ROUTES: Record<string, string> = {
   manageVolunteers: "/organizador/voluntariados",
   users: "/admin/usuarios",
   moderation: "/admin/moderacion",
+  manageContent: "/admin/contenido",
   audit: "/admin/auditoria",
+  impactLog: "/bitacora-impacto",
+  gamificationStats: "/admin/gamificacion",
 } as const;
 
 type DashboardSummary = { label: string; value: string }[];

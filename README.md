@@ -84,10 +84,12 @@ comment visibility, privacy inheritance, ownership, and moderation.
 
 The notification inbox uses `GET /api/notificaciones`,
 `PATCH /api/notificaciones/{id}/leida`, and
-`PATCH /api/notificaciones/marcar-todas-leidas`. The API implements push as
-Web Push subscriptions (`endpoint`, `keys.p256dh`, and `keys.auth`); native Expo
-push uses a different token contract, so this app currently provides the
-in-app inbox but does not claim to enable native push.
+`PATCH /api/notificaciones/marcar-todas-leidas`. Participants and organizers
+can also read and update `GET/PATCH /api/notificaciones/preferencias` to choose
+no reminders, reminders one day and one hour before an activity, or one daily
+reminder. The API implements push as Web Push subscriptions (`endpoint`,
+`keys.p256dh`, and `keys.auth`); native Expo push uses a different token
+contract, so the app does not register or claim to enable native push.
 
 The role-based dashboard loads summaries from the API. Volunteers can open
 their enrollments and notification inbox; organizers can list only their
@@ -97,6 +99,26 @@ Administrators can manage accounts, review activities and articles, publish or
 archive flora/fauna and places, and inspect audit entries. The API remains the
 authority for authorization, ownership, activity status, enrollment, and
 attendance time-window checks.
+Organizers and admins can also open the impact log; admins have a separate
+gamification statistics screen and can inspect the answers for each recent
+attempt.
+
+Administrators can also open **Gestión de contenido** from the dashboard to
+create and edit places, flora/fauna records, and articles; upload, replace, or
+remove their images; and manage the states supported by the API. Places use
+`GET /api/admin/lugares`, `POST /api/lugares`, and
+`PUT /api/lugares/{id}`. Flora/fauna uses `GET /api/admin/flora-fauna` and
+`POST/PUT /api/flora-fauna`. Articles use authenticated `GET /api/articulos`
+(admins receive all states), `POST/PUT /api/articulos`, and the existing
+admin state/delete routes. Multipart updates use Laravel's `_method=PUT`
+override. The image limits are one image per place, five per flora/fauna
+record, and ten per article; each file is limited to 5 MB by the API. Places
+and flora/fauna are archived rather than deleted. Article deletion and state
+changes require an explicit confirmation in the app.
+
+The admin image editor uses `expo-image-picker`. A development build must be
+rebuilt after adding the native module/config plugin; Expo Go can be used for
+development where the installed SDK includes the module.
 
 The organizer activity dashboard shows attendance requests beside each
 participant. A participant with a recorded absence can request a review from
@@ -119,6 +141,17 @@ uses the public `GET /api/voluntariados/{id}/impactos` and
 activity owner, completion time, metric units, and amount validation.
 Activity detail and organizer views include a per-metric bar chart of the six
 most recent reports; each unit uses its own scale.
+
+The **Bitácora de impacto** screen uses
+`GET /api/organizador/bitacora-impacto` or
+`GET /api/admin/bitacora-impacto` according to the signed-in role. It supports
+date, category, place, and state filters, and shows the returned KPIs,
+evolution, category totals, and activity history. Its bars state that their
+scale is relative within each series and display exact values; empty results do
+not fabricate totals. Admin gamification statistics use
+`GET /api/admin/gamificacion/estadisticas`, with an individual answer view from
+`GET /api/admin/gamification/intentos/{attemptId}`. These views are linked from
+the role-based dashboard and remain protected by API authorization.
 
 The attendance QR scanner requests camera access on iOS and Android. A
 development build must be rebuilt after adding the `expo-camera` config plugin;

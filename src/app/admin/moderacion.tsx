@@ -78,6 +78,10 @@ export default function AdminModerationScreen() {
       setError("Para rechazar un artículo, escribe un motivo de al menos 5 caracteres.");
       return;
     }
+    if (action === "reject" && item.tipo === "lugar" && !reason) {
+      setError("Escribe un motivo para rechazar el lugar.");
+      return;
+    }
     setWorkingId(item.id);
     setError(null);
     try {
@@ -138,7 +142,8 @@ export default function AdminModerationScreen() {
       ) : (
         <View style={styles.list}>
           {items.map((item) => {
-            const reviewable = item.tipo === "voluntariado" || item.tipo === "articulo";
+            const pendingPlace = item.tipo === "lugar" && item.estado === "pendiente_de_aprobacion";
+            const reviewable = item.tipo === "voluntariado" || item.tipo === "articulo" || pendingPlace;
             const published = item.estado === "publicado" || item.estado === "activo";
             const canChangeStatus = published || item.estado === "archivado";
             return (
@@ -168,7 +173,9 @@ export default function AdminModerationScreen() {
                     />
                     <View style={styles.actions}>
                       <Pressable disabled={workingId === item.id} onPress={() => void runAction(item, "approve")} style={styles.approveButton}>
-                        <Text style={styles.approveText}>{workingId === item.id ? "Guardando…" : "Aprobar y publicar"}</Text>
+                        <Text style={styles.approveText}>
+                          {workingId === item.id ? "Guardando…" : pendingPlace ? "Aprobar lugar" : "Aprobar y publicar"}
+                        </Text>
                       </Pressable>
                       <Pressable disabled={workingId === item.id} onPress={() => void runAction(item, "reject")} style={styles.rejectButton}>
                         <Text style={styles.rejectText}>Rechazar</Text>
@@ -205,6 +212,7 @@ export default function AdminModerationScreen() {
 function statusLabel(status: string): string {
   const labels: Record<string, string> = {
     pendiente: "Pendiente",
+    pendiente_de_aprobacion: "Pendiente de aprobación",
     rechazado: "Rechazado",
     borrador: "Borrador",
     publicado: "Publicado",

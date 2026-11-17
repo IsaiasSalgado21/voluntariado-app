@@ -34,6 +34,12 @@
       ],
       "expo-font",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permite que Regenera seleccione imágenes para el contenido administrativo."
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "Permite que Regenera centre el mapa y muestre tu ubicación mientras usas la app."
