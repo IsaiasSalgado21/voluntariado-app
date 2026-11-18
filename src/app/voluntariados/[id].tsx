@@ -4,17 +4,20 @@ import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import MapView, { Marker } from "@/features/map/map-view";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { VolunteerPhoto } from "@/features/voluntariados/volunteer-photo";
 import { CommentsSection } from "@/features/comentarios/comments-section";
+import { AppNavigationBar } from "@/components/regenera-ui";
 import { Colors } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useSession } from "@/features/auth/use-session";
@@ -38,11 +41,13 @@ import {
 import { fetchVolunteerImpact, type VolunteerImpactSummary } from "@/features/impacto/api";
 import { ImpactMetricsChart } from "@/features/impacto/impact-metrics-chart";
 import { VolunteerSymbol, type VolunteerSymbolName } from "@/features/voluntariados/volunteer-symbol";
+import { VolunteerCapacityCard } from "@/features/voluntariados/volunteer-capacity";
 
 export default function VolunteerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const volunteerId = (Array.isArray(id) ? id[0] : id) ?? "";
   const insets = useSafeAreaInsets();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const theme = useTheme();
   const scheme = Colors.dark.background === theme.background ? "dark" : "light";
   const colors = Colors[scheme];
@@ -72,6 +77,9 @@ export default function VolunteerDetailScreen() {
   const [impactError, setImpactError] = useState<string | null>(null);
   const [impactRefresh, setImpactRefresh] = useState(0);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [galleryVisible, setGalleryVisible] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [mapActionError, setMapActionError] = useState<string | null>(null);
 
   const canEnroll = Boolean(
     token
@@ -288,6 +296,9 @@ export default function VolunteerDetailScreen() {
   if (error || !volunteer) {
     return (
       <View style={[styles.center, styles.errorState, { backgroundColor: colors.background }]}>
+        <View style={styles.errorNavigation}>
+          <AppNavigationBar backLabel="Voluntariados" onBack={goBack} />
+        </View>
         <Text style={[styles.title, { color: colors.text }]}>
           {error ? "No pudimos abrir esta actividad" : "Voluntariado no disponible"}
         </Text>
@@ -309,15 +320,11 @@ export default function VolunteerDetailScreen() {
   const mapUrl = coordinates
     ? `https://www.openstreetmap.org/?mlat=${coordinates.latitude}&mlon=${coordinates.longitude}#map=15/${coordinates.latitude}/${coordinates.longitude}`
     : null;
+  const googleMapsUrl = coordinates
+    ? `https://www.google.com/maps/search/?api=1&query=${coordinates.latitude},${coordinates.longitude}`
+    : null;
   const isFull = capacity?.lleno === true;
   const enrollmentClosed = volunteer.estado !== "publicado" || volunteer.finalizadoPorFecha;
-  const capacityLabel = capacityLoading
-    ? `Consultando ocupación · cupo máximo ${volunteer.cupo}`
-    : capacity
-      ? capacity.lleno
-        ? `Lleno · ${capacity.inscripciones_activas} de ${capacity.cupo}`
-        : `${Math.max(0, capacity.cupo - capacity.inscripciones_activas)} lugares disponibles de ${capacity.cupo}`
-      : `Cupo máximo: ${volunteer.cupo} · ocupación actual no disponible`;
   const factColors = {
     textColor: colors.text,
     labelColor: colors.textSecondary,
@@ -333,8 +340,33 @@ export default function VolunteerDetailScreen() {
   const heroImage = galleryImages.includes(selectedImage ?? "")
     ? selectedImage
     : galleryImages[0] ?? null;
+  const showGalleryImage = (index: number) => {
+    if (galleryImages.length === 0) return;
+    const nextIndex = (index + galleryImages.length) % galleryImages.length;
+    const nextImage = galleryImages[nextIndex];
+    if (!nextImage) return;
+    setGalleryIndex(nextIndex);
+    setSelectedImage(nextImage);
+  };
+  const openGallery = () => {
+    const selectedIndex = galleryImages.indexOf(heroImage ?? "");
+    setGalleryIndex(Math.max(0, selectedIndex));
+    setGalleryVisible(true);
+  };
+  const openExternalMap = async (url: string) => {
+    setMapActionError(null);
+    try {
+      await Linking.openURL(url);
+    } catch (cause) {
+      setMapActionError(cause instanceof Error ? cause.message : "No se pudo abrir la aplicación de mapas.");
+    }
+  };
+  const openRegeneraMap = () => {
+    router.push({ pathname: "/", params: { voluntariado: volunteer.id } });
+  };
 
   return (
+    <>
     <ScrollView
       style={{ flex: 1, backgroundColor: colors.background }}
       contentContainerStyle={{
@@ -342,14 +374,7 @@ export default function VolunteerDetailScreen() {
         paddingBottom: insets.bottom + 28,
       }}
     >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Volver a la lista de voluntariados"
-        onPress={goBack}
-        style={styles.backButton}
-      >
-        <Text style={styles.backText}>‹  Voluntariados</Text>
-      </Pressable>
+      <AppNavigationBar backLabel="Voluntariados" onBack={goBack} />
 
       <View style={styles.hero}>
         <VolunteerPhoto
@@ -397,6 +422,16 @@ export default function VolunteerDetailScreen() {
               Organiza: {volunteer.organizadorNombre ?? "Organizador"}
             </Text>
           </View>
+          {heroImage && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Ver galería de imágenes en pantalla completa"
+              onPress={openGallery}
+              style={styles.galleryOpenButton}
+            >
+              <Text style={styles.galleryOpenText}>⤢  Ver imagen en grande</Text>
+            </Pressable>
+          )}
         </View>
       </View>
       {galleryImages.length > 1 && (
@@ -414,7 +449,7 @@ export default function VolunteerDetailScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Mostrar imagen ${index + 1} de ${galleryImages.length}`}
                 accessibilityState={{ selected: active }}
-                onPress={() => setSelectedImage(image)}
+                onPress={() => showGalleryImage(index)}
                 style={[styles.galleryThumbnail, active && styles.galleryThumbnailActive]}
               >
                 <Image source={{ uri: image }} contentFit="cover" style={styles.galleryImage} />
@@ -610,22 +645,24 @@ export default function VolunteerDetailScreen() {
             label="Organizador"
             value={volunteer.organizadorNombre ?? "Organizador no disponible"}
           />
-          <Fact {...factColors} icon="participantes" label="Cupo" value={capacityLabel} />
           <Fact
             {...factColors}
             icon={volunteer.estado === "pendiente" ? "pendiente" : volunteer.estado === "cancelado" ? "cancelado" : "voluntariado"}
             label="Estado"
             value={formatVolunteerStatus(volunteer.estado, volunteer.finalizadoPorFecha)}
           />
-          {capacityError && (
-            <Text style={styles.errorText}>
-              No se pudo verificar la ocupación actual{capacityError ? `: ${capacityError}` : ""}. La API confirmará el cupo al inscribirte.
-            </Text>
-          )}
           {placeError && (
             <Text style={styles.errorText}>No se pudieron cargar todos los datos del lugar: {placeError}</Text>
           )}
         </View>
+
+        <VolunteerCapacityCard
+          cupo={capacity?.cupo ?? volunteer.cupo}
+          inscritos={capacity?.inscripciones_activas ?? null}
+          disponibles={capacity ? Math.max(0, capacity.cupo - capacity.inscripciones_activas) : null}
+          loading={capacityLoading}
+          error={capacityError}
+        />
 
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Requisitos</Text>
@@ -708,14 +745,9 @@ export default function VolunteerDetailScreen() {
               No hay coordenadas públicas disponibles para mostrar el mapa.
             </Text>
           ) : Platform.OS === "web" ? (
-            <Pressable
-              onPress={() => {
-                if (mapUrl) void Linking.openURL(mapUrl);
-              }}
-              style={styles.mapLink}
-            >
-              <Text style={styles.mapLinkText}>Abrir ubicación en OpenStreetMap →</Text>
-            </Pressable>
+            <Text style={[styles.description, { color: colors.textSecondary }]}>
+              El mapa interactivo está disponible en iPhone y Android.
+            </Text>
           ) : (
             <MapView
               style={styles.map}
@@ -737,14 +769,101 @@ export default function VolunteerDetailScreen() {
               />
             </MapView>
           )}
-          {coordinates && Platform.OS !== "web" && mapUrl && (
-            <Pressable onPress={() => void Linking.openURL(mapUrl)} style={styles.mapLink}>
-              <Text style={styles.mapLinkText}>Abrir en OpenStreetMap →</Text>
-            </Pressable>
+          {coordinates && (
+            <View style={styles.mapActions}>
+              <Pressable onPress={openRegeneraMap} style={[styles.mapActionButton, { backgroundColor: colors.backgroundSelected }]}>
+                <VolunteerSymbol name="ubicacion" size={17} />
+                <Text style={styles.mapLinkText}>Mapa de Regenera</Text>
+              </Pressable>
+              {googleMapsUrl && (
+                <Pressable onPress={() => void openExternalMap(googleMapsUrl)} style={[styles.mapActionButton, { backgroundColor: colors.backgroundSelected }]}>
+                  <Text style={styles.mapLinkText}>Google Maps ↗</Text>
+                </Pressable>
+              )}
+              {mapUrl && (
+                <Pressable onPress={() => void openExternalMap(mapUrl)} style={styles.mapActionButton}>
+                  <Text style={styles.mapLinkText}>OpenStreetMap ↗</Text>
+                </Pressable>
+              )}
+            </View>
           )}
+          {mapActionError && <Text accessibilityRole="alert" style={styles.errorText}>{mapActionError}</Text>}
         </View>
       </View>
     </ScrollView>
+    <Modal
+      visible={galleryVisible}
+      animationType="fade"
+      onRequestClose={() => setGalleryVisible(false)}
+    >
+      <View
+        accessibilityViewIsModal
+        style={[
+          styles.galleryModal,
+          { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 12 },
+        ]}
+      >
+        <View style={styles.galleryModalHeader}>
+          <View style={styles.galleryModalHeading}>
+            <Text numberOfLines={1} style={styles.galleryModalTitle}>{volunteer.titulo}</Text>
+            <Text style={styles.galleryModalCount}>{galleryIndex + 1} / {galleryImages.length}</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar galería"
+            onPress={() => setGalleryVisible(false)}
+            style={styles.galleryModalClose}
+          >
+            <Text style={styles.galleryModalCloseText}>×</Text>
+          </Pressable>
+        </View>
+        <View style={styles.galleryModalBody}>
+          <Image
+            accessibilityLabel={`Imagen ${galleryIndex + 1} de ${galleryImages.length}: ${volunteer.titulo}`}
+            source={{ uri: galleryImages[galleryIndex] }}
+            contentFit="contain"
+            style={{ width: screenWidth, height: Math.max(180, screenHeight - insets.top - insets.bottom - 128) }}
+          />
+          {galleryImages.length > 1 && (
+            <>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Imagen anterior"
+                onPress={() => showGalleryImage(galleryIndex - 1)}
+                style={[styles.galleryModalArrow, styles.galleryModalPrevious]}
+              >
+                <Text style={styles.galleryModalArrowText}>‹</Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Imagen siguiente"
+                onPress={() => showGalleryImage(galleryIndex + 1)}
+                style={[styles.galleryModalArrow, styles.galleryModalNext]}
+              >
+                <Text style={styles.galleryModalArrowText}>›</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+        {galleryImages.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.galleryModalThumbnails}>
+            {galleryImages.map((image, index) => (
+              <Pressable
+                key={`${image}-${index}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Mostrar imagen ${index + 1}`}
+                accessibilityState={{ selected: galleryIndex === index }}
+                onPress={() => showGalleryImage(index)}
+                style={[styles.galleryThumbnail, galleryIndex === index && styles.galleryThumbnailActive]}
+              >
+                <Image source={{ uri: image }} contentFit="cover" style={styles.galleryImage} />
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+    </Modal>
+    </>
   );
 }
 
@@ -902,8 +1021,7 @@ function formatImpactDate(value: string): string {
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center", gap: 12, padding: 24 },
   errorState: { alignItems: "stretch" },
-  backButton: { paddingHorizontal: 20, paddingVertical: 12 },
-  backText: { color: "#164F3D", fontSize: 16, fontWeight: "700" },
+  errorNavigation: { alignSelf: "stretch" },
   hero: { position: "relative", backgroundColor: "#244B3B" },
   heroOverlay: { position: "absolute", right: 0, bottom: 0, left: 0, gap: 8, paddingHorizontal: 20, paddingVertical: 18, backgroundColor: "rgba(8, 28, 20, 0.82)" },
   heroEyebrow: { color: "#D3DED7", fontSize: 11, fontWeight: "800", letterSpacing: 1.4 },
@@ -919,9 +1037,24 @@ const styles = StyleSheet.create({
   organizerInitial: { color: "#164F3D", fontSize: 14, fontWeight: "800" },
   organizerName: { flex: 1, color: "#D3DED7", fontSize: 12, fontWeight: "600" },
   gallery: { gap: 9, paddingHorizontal: 18, paddingTop: 10 },
+  galleryOpenButton: { alignSelf: "flex-start", borderWidth: 1, borderColor: "rgba(255,255,255,0.3)", borderRadius: 999, paddingHorizontal: 11, paddingVertical: 8, backgroundColor: "rgba(15,32,25,0.68)" },
+  galleryOpenText: { color: "#FFFFFF", fontSize: 12, fontWeight: "700" },
   galleryThumbnail: { width: 62, height: 48, overflow: "hidden", borderWidth: 2, borderColor: "transparent", borderRadius: 10, opacity: 0.75 },
   galleryThumbnailActive: { borderColor: "#2F8064", opacity: 1 },
   galleryImage: { width: "100%", height: "100%" },
+  galleryModal: { flex: 1, backgroundColor: "#09140F" },
+  galleryModalHeader: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingBottom: 8 },
+  galleryModalHeading: { flex: 1, gap: 3 },
+  galleryModalTitle: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
+  galleryModalCount: { color: "#C8D8CE", fontSize: 12 },
+  galleryModalClose: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: "#20352A" },
+  galleryModalCloseText: { color: "#FFFFFF", fontSize: 28, lineHeight: 31 },
+  galleryModalBody: { flex: 1, alignItems: "center", justifyContent: "center" },
+  galleryModalArrow: { position: "absolute", top: "45%", width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: "rgba(15,32,25,0.75)" },
+  galleryModalPrevious: { left: 12 },
+  galleryModalNext: { right: 12 },
+  galleryModalArrowText: { color: "#FFFFFF", fontSize: 30, lineHeight: 34 },
+  galleryModalThumbnails: { gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
   eyebrow: { color: "#164F3D", fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
   title: { fontSize: 27, fontWeight: "800", lineHeight: 34 },
   category: { alignSelf: "flex-start", borderWidth: 1, borderColor: "rgba(255,255,255,0.45)", borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, backgroundColor: "rgba(15,50,39,0.7)", color: "#FFFFFF", fontSize: 11, fontWeight: "700", letterSpacing: 0.5, overflow: "hidden" },
@@ -946,8 +1079,9 @@ const styles = StyleSheet.create({
   factLabel: { fontSize: 12, fontWeight: "600" },
   factValue: { color: "#20332B", fontSize: 15, fontWeight: "700" },
   map: { height: 220, borderRadius: 14 },
-  mapLink: { paddingVertical: 8 },
-  mapLinkText: { color: "#164F3D", fontWeight: "700" },
+  mapActions: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 4 },
+  mapActionButton: { minHeight: 40, flexDirection: "row", alignItems: "center", gap: 5, justifyContent: "center", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: "#EDF4EE" },
+  mapLinkText: { color: "#164F3D", fontSize: 12, fontWeight: "700" },
   muted: { fontSize: 14, lineHeight: 21, textAlign: "center" },
   primaryButton: { alignItems: "center", justifyContent: "center", minHeight: 46, marginTop: 6, paddingHorizontal: 16, borderRadius: 13, backgroundColor: "#164F3D" },
   primaryButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },

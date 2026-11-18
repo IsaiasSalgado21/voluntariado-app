@@ -30,7 +30,7 @@ export default function CompleteProfileScreen() {
 
   useEffect(() => {
     if (status === "unauthenticated") router.replace("/login");
-    else if (status === "authenticated" && user?.perfilCompleto) router.replace("/perfil");
+    else if (status === "authenticated" && user?.perfilCompleto) router.replace("/");
   }, [status, user?.perfilCompleto]);
 
   const submit = async () => {
@@ -51,6 +51,7 @@ export default function CompleteProfileScreen() {
     try {
       await completeProfile(token, result.payload);
       await refreshProfile();
+      router.replace("/");
     } catch (cause) {
       if (cause instanceof ApiRequestError) {
         if (cause.code === "edad_minima") setBlocked(true);

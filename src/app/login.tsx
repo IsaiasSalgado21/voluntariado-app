@@ -24,6 +24,7 @@ import {
   type ProfileFormValues,
 } from "@/features/auth/profile";
 import { AuthenticationError } from "@/features/auth/api";
+import { AppNavigationBar } from "@/components/regenera-ui";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -42,7 +43,7 @@ export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (status === "authenticated") router.replace("/perfil");
+    if (status === "authenticated") router.replace("/");
   }, [status]);
 
   const switchMode = () => {
@@ -121,14 +122,10 @@ export default function LoginScreen() {
         ]}
         keyboardShouldPersistTaps="handled"
       >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Volver a más opciones"
-          onPress={() => router.canGoBack() ? router.back() : router.replace("/mas")}
-          style={styles.backButton}
-        >
-          <Text style={styles.backText}>‹  Más opciones</Text>
-        </Pressable>
+        <AppNavigationBar
+          backLabel="Más opciones"
+          onBack={() => router.canGoBack() ? router.back() : router.replace("/mas")}
+        />
 
         <View style={[styles.brandMark, { backgroundColor: colors.backgroundSelected }]}>
           <Text style={styles.brandIcon}>🌱</Text>
@@ -140,7 +137,7 @@ export default function LoginScreen() {
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           {isRegistering
             ? "Únete a la comunidad que cuida nuestros ecosistemas."
-            : "Inicia sesión para consultar tu perfil y participar."}
+            : "Inicia sesión para explorar voluntariados, consultar tu perfil y participar."}
         </Text>
 
         <View style={styles.form}>
@@ -272,8 +269,6 @@ function FormField({
 
 const styles = StyleSheet.create({
   content: { flexGrow: 1, paddingHorizontal: 22, gap: 14 },
-  backButton: { paddingVertical: 2, alignSelf: "flex-start" },
-  backText: { color: "#164F3D", fontSize: 15, fontWeight: "700" },
   brandMark: { width: 58, height: 58, borderRadius: 20, justifyContent: "center", alignItems: "center", marginTop: 16 },
   brandIcon: { fontSize: 30 },
   eyebrow: { color: "#164F3D", fontSize: 11, fontWeight: "800", letterSpacing: 0.8, marginTop: 4 },

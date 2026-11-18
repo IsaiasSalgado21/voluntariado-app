@@ -167,12 +167,46 @@ test("parses managed activities and organizer dashboard summaries", async () => 
     assert.equal(dashboard.participants[0].usuarioId, "user-1");
     assert.equal(dashboard.participants[0].falto, true);
     assert.equal(dashboard.participants[0].solicitudAsistencia?.id, "request-1");
-    assert.equal((await createManagedVolunteer("bearer", volunteer)).id, "volunteer-1");
-    assert.equal((await updateManagedVolunteer("bearer", "volunteer-1", { cupo: 25 })).cupo, 20);
+    const formValues = {
+      titulo: volunteer.titulo,
+      descripcion: volunteer.descripcion,
+      categoria: volunteer.categoria,
+      lugarId: volunteer.lugarId,
+      fechaInicio: volunteer.fechaInicio,
+      fechaFin: volunteer.fechaFin,
+      horaInicio: volunteer.horaInicio,
+      horaFin: volunteer.horaFin,
+      cupo: volunteer.cupo,
+      requisitos: ["Calzado cómodo"],
+      materiales: ["Guantes"],
+    };
+    const imageUpload = {
+      uri: "file:///volunteer.jpg",
+      fileName: "volunteer.jpg",
+      mimeType: "image/jpeg",
+      file: new Blob(["image-data"], { type: "image/jpeg" }),
+    };
+    assert.equal((await createManagedVolunteer("bearer", formValues, [imageUpload])).id, "volunteer-1");
+    assert.equal((await updateManagedVolunteer(
+      "bearer",
+      "volunteer-1",
+      { cupo: 25 },
+      [imageUpload],
+      [0],
+    )).cupo, 20);
     assert.equal(mock.requests[0].url, "https://api.example.test/api/admin/voluntariados");
     assert.equal(mock.requests[1].url, "https://api.example.test/api/admin/voluntariados/volunteer-1/dashboard");
     assert.equal(mock.requests[2].method, "POST");
-    assert.equal(mock.requests[3].method, "PUT");
+    assert.equal(mock.requests[2].method, "POST");
+    assert.equal(mock.requests[2].formData.get("titulo"), volunteer.titulo);
+    assert.equal(mock.requests[2].formData.get("requisitos[]"), "Calzado cómodo");
+    assert.equal(mock.requests[2].formData.get("materiales[]"), "Guantes");
+    assert.equal(mock.requests[2].formData.getAll("imagenes[]").length, 1);
+    assert.equal(mock.requests[2].formData.getAll("imagenes[]")[0].name, "volunteer.jpg");
+    assert.equal(mock.requests[3].method, "POST");
+    assert.equal(mock.requests[3].formData.get("_method"), "PUT");
+    assert.equal(mock.requests[3].formData.get("cupo"), "25");
+    assert.equal(mock.requests[3].formData.get("imagenesEliminar[]"), "0");
   } finally {
     mock.restore();
   }

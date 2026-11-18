@@ -1,19 +1,23 @@
 import { router } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/theme";
+import { Colors, RegeneraColors } from "@/constants/theme";
+import { AppNavigationBar, RegeneraCard, RegeneraPageHeader } from "@/components/regenera-ui";
 import { useTheme } from "@/hooks/use-theme";
 import { useSession } from "@/features/auth/use-session";
+import { VOLUNTEER_CATEGORIES } from "@/features/voluntariados/filters";
 import {
   deleteManagedVolunteer,
+  filterManagedVolunteersByTitle,
   fetchManagedVolunteers,
   type ManagedVolunteer,
 } from "@/features/organizador/api";
@@ -31,6 +35,7 @@ export default function ManagedVolunteersScreen() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [titleSearch, setTitleSearch] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -62,6 +67,10 @@ export default function ManagedVolunteersScreen() {
   const goBack = () => router.canGoBack() ? router.back() : router.replace("/dashboard");
   const isAdmin = user?.rol === "admin";
   const canManage = isAdmin || user?.rol === "organizador";
+  const filteredItems = useMemo(
+    () => filterManagedVolunteersByTitle(items, titleSearch),
+    [items, titleSearch],
+  );
 
   const removeVolunteer = async (id: string) => {
     if (!token) return;
@@ -85,19 +94,16 @@ export default function ManagedVolunteersScreen() {
         styles.content,
         { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 28 },
       ]}
+      keyboardShouldPersistTaps="handled"
     >
-      <Pressable onPress={goBack} style={styles.backButton}>
-        <Text style={styles.backText}>‹  Mi panel</Text>
-      </Pressable>
-      <Text style={styles.eyebrow}>REGENERA · GESTIÓN</Text>
+      <AppNavigationBar backLabel="Mi panel" onBack={goBack} />
       <View style={styles.heading}>
         <View style={styles.headingCopy}>
-          <Text style={[styles.title, { color: colors.text }]}>
-            {isAdmin ? "Todos los voluntariados" : "Mis voluntariados"}
-          </Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-            {isAdmin ? "Revisa actividades y consulta su operación." : "Crea actividades y da seguimiento a cada jornada."}
-          </Text>
+          <RegeneraPageHeader
+            eyebrow="REGENERA · GESTIÓN"
+            title={isAdmin ? "Todos los voluntariados" : "Mis voluntariados"}
+            subtitle={isAdmin ? "Revisa actividades y consulta su operación." : "Crea actividades y da seguimiento a cada jornada."}
+          />
         </View>
         {canManage && (
           <Pressable
@@ -150,15 +156,58 @@ export default function ManagedVolunteersScreen() {
           actionLabel="Crear actividad"
         />
       ) : (
-        <View style={styles.list}>
-          {items.map((item) => (
-            <View key={item.id} style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+        <View style={styles.listSection}>
+          <View style={styles.searchSection}>
+            <Text style={[styles.filterLabel, { color: colors.text }]}>Buscar por título</Text>
+            <View
+              style={[
+                styles.searchBox,
+                { backgroundColor: colors.backgroundElement, borderColor: colors.backgroundSelected },
+              ]}
+            >
+              <TextInput
+                accessibilityLabel="Buscar voluntariados por título"
+                accessibilityHint="Filtra las actividades mientras escribes"
+                autoCapitalize="none"
+                autoCorrect={false}
+                onChangeText={setTitleSearch}
+                placeholder="Escribe parte del título"
+                placeholderTextColor={colors.textSecondary}
+                returnKeyType="search"
+                style={[styles.searchInput, { color: colors.text }]}
+                value={titleSearch}
+              />
+              {!!titleSearch && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Limpiar búsqueda"
+                  hitSlop={8}
+                  onPress={() => setTitleSearch("")}
+                  style={styles.clearSearch}
+                >
+                  <Text style={styles.clearSearchText}>Limpiar</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+          {filteredItems.length === 0 ? (
+            <EmptyState
+              colors={colors}
+              title="No encontramos coincidencias"
+              message="Prueba con otras palabras del título o limpia la búsqueda."
+              onAction={() => setTitleSearch("")}
+              actionLabel="Limpiar búsqueda"
+            />
+          ) : (
+            <View style={styles.list}>
+              {filteredItems.map((item) => (
+            <RegeneraCard key={item.id} style={styles.card}>
               <View style={styles.cardHeading}>
                 <Text style={[styles.cardTitle, { color: colors.text }]}>{item.titulo}</Text>
                 <Text style={[styles.badge, statusStyle(item.estado)]}>{statusLabel(item.estado)}</Text>
               </View>
               <Text style={[styles.muted, { color: colors.textSecondary }]}>
-                {formatDate(item.fechaInicio)} · Cupo {item.cupo} · {item.categoria || "Sin categoría"}
+                {formatDate(item.fechaInicio)} · Cupo {item.cupo} · {categoryLabel(item.categoria.trim())}
               </Text>
               <View style={styles.actions}>
                 <Pressable
@@ -225,8 +274,10 @@ export default function ManagedVolunteersScreen() {
                   </View>
                 </View>
               )}
+            </RegeneraCard>
+              ))}
             </View>
-          ))}
+          )}
         </View>
       )}
       {error && items.length > 0 && <Text accessibilityRole="alert" style={styles.error}>{error}</Text>}
@@ -248,13 +299,13 @@ function EmptyState({
   actionLabel: string;
 }) {
   return (
-    <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+    <RegeneraCard style={styles.card}>
       <Text style={[styles.cardTitle, { color: colors.text }]}>{title}</Text>
       <Text style={[styles.muted, { color: colors.textSecondary }]}>{message}</Text>
       <Pressable onPress={onAction} style={styles.primaryButton}>
         <Text style={styles.primaryButtonText}>{actionLabel}</Text>
       </Pressable>
-    </View>
+    </RegeneraCard>
   );
 }
 
@@ -281,20 +332,34 @@ function formatDate(value: string): string {
   return new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" }).format(date);
 }
 
+function categoryLabel(category: string): string {
+  if (!category) return "Sin categoría";
+  const normalized = category.toLocaleLowerCase("es-MX");
+  const knownLabel = VOLUNTEER_CATEGORIES.find(([value]) => value === normalized)?.[1];
+  if (knownLabel && normalized) return knownLabel;
+  return category
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((word) => `${word.charAt(0).toLocaleUpperCase("es-MX")}${word.slice(1)}`)
+    .join(" ");
+}
+
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 18, gap: 13 },
-  backButton: { paddingVertical: 8 },
-  backText: { color: "#164F3D", fontSize: 15, fontWeight: "700" },
-  eyebrow: { color: "#164F3D", fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
   heading: { flexDirection: "row", alignItems: "center", gap: 12 },
-  headingCopy: { flex: 1, gap: 5 },
-  title: { fontSize: 27, fontWeight: "800" },
-  subtitle: { fontSize: 14, lineHeight: 20 },
-  addButton: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "#DCE8DF" },
-  addButtonText: { color: "#164F3D", fontSize: 25, fontWeight: "600" },
-  primaryButton: { alignItems: "center", justifyContent: "center", minHeight: 46, paddingHorizontal: 16, borderRadius: 13, backgroundColor: "#164F3D" },
+  headingCopy: { flex: 1 },
+  addButton: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: RegeneraColors.softGreen },
+  addButtonText: { color: RegeneraColors.primary, fontSize: 25, fontWeight: "600" },
+  primaryButton: { alignItems: "center", justifyContent: "center", minHeight: 46, paddingHorizontal: 16, borderRadius: 13, backgroundColor: RegeneraColors.primary },
   primaryButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
   state: { alignItems: "center", gap: 12, paddingVertical: 38 },
+  listSection: { gap: 12 },
+  searchSection: { gap: 7 },
+  filterLabel: { fontSize: 13, fontWeight: "700" },
+  searchBox: { minHeight: 48, flexDirection: "row", alignItems: "center", borderWidth: 1, borderRadius: 14, paddingLeft: 13, paddingRight: 10 },
+  searchInput: { flex: 1, minHeight: 46, paddingVertical: 10, fontSize: 15 },
+  clearSearch: { paddingHorizontal: 7, paddingVertical: 8 },
+  clearSearchText: { color: RegeneraColors.primary, fontSize: 12, fontWeight: "700" },
   list: { gap: 12 },
   card: { padding: 17, borderRadius: 18, gap: 10 },
   cardHeading: { flexDirection: "row", alignItems: "flex-start", gap: 9 },

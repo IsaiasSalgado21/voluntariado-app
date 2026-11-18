@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  canCreateCommentForRole,
   createVolunteerComment,
   deleteVolunteerComment,
   fetchVolunteerComments,
@@ -31,6 +32,14 @@ const reply = {
   contenido: "Lleva guantes reutilizables.",
   es_privado: true,
 };
+
+test("allows authenticated volunteer, organizer, and admin roles to create comments", () => {
+  assert.equal(canCreateCommentForRole("usuario"), true);
+  assert.equal(canCreateCommentForRole("organizador"), true);
+  assert.equal(canCreateCommentForRole("admin"), true);
+  assert.equal(canCreateCommentForRole(null), false);
+  assert.equal(canCreateCommentForRole("unknown"), false);
+});
 
 function installFetch(handler) {
   const originalFetch = globalThis.fetch;

@@ -12,6 +12,7 @@ test("provides distinct dashboard cards for volunteer, organizer, and admin role
   assert.ok(organizer.cards.some((card) => card.title === "Mis voluntariados" && card.action === "manageVolunteers"));
   assert.ok(organizer.cards.some((card) => card.title === "Bitácora de impacto" && card.action === "impactLog"));
   assert.ok(admin.cards.some((card) => card.title === "Usuarios y roles" && card.action === "users"));
+  assert.ok(admin.cards.some((card) => card.title === "Gestión de voluntariados" && card.action === "manageVolunteers"));
   assert.ok(admin.cards.some((card) => card.title === "Gestión de contenido" && card.action === "manageContent"));
   assert.ok(admin.cards.some((card) => card.title === "Estadísticas de gamificación" && card.action === "gamificationStats"));
   assert.ok(admin.cards.some((card) => card.title === "Bitácora de impacto" && card.action === "impactLog"));

@@ -1,5 +1,6 @@
 import { requestApiJson, resolveApiAssetUrl } from "../api-client.ts";
 import { isCommentsDefault, type CommentsDefault } from "../voluntariados/api.ts";
+import { normalizeSearch } from "../voluntariados/filters.ts";
 
 export type AttendanceCorrectionRequest = {
   id: string;
@@ -21,12 +22,26 @@ export type ManagedVolunteer = {
   cupo: number;
   requisitos: string[];
   materiales: string[];
+  imagen: string | null;
+  imagenes: string[];
   estado: string;
   iniciadoPorFecha: boolean;
   tokenAsistencia: string | null;
   codigoCorto: string | null;
   codigoAsistenciaActivo: boolean;
 };
+
+export function filterManagedVolunteersByTitle(
+  items: ManagedVolunteer[],
+  query: string,
+): ManagedVolunteer[] {
+  const normalizedQuery = normalizeSearch(query.replace(/[-_]/g, " "));
+  if (!normalizedQuery) return items;
+
+  return items.filter((item) =>
+    normalizeSearch(item.titulo.replace(/[-_]/g, " ")).includes(normalizedQuery),
+  );
+}
 
 export type VolunteerFormValues = Omit<
   ManagedVolunteer,
@@ -37,7 +52,16 @@ export type VolunteerFormValues = Omit<
   | "tokenAsistencia"
   | "codigoCorto"
   | "codigoAsistenciaActivo"
+  | "imagen"
+  | "imagenes"
 > & { organizadorId?: string };
+
+export type VolunteerImageUpload = {
+  uri: string;
+  fileName: string | null;
+  mimeType: string | null;
+  file?: Blob;
+};
 
 export type OrganizerOption = {
   id: string;
@@ -115,12 +139,29 @@ export function parseManagedVolunteer(value: unknown): ManagedVolunteer {
     || (value.codigoCorto !== undefined
       && value.codigoCorto !== null
       && typeof value.codigoCorto !== "string")
+    || (value.imagen !== undefined
+      && value.imagen !== null
+      && typeof value.imagen !== "string")
+    || (value.imagenes !== undefined
+      && value.imagenes !== null
+      && (!Array.isArray(value.imagenes)
+        || !value.imagenes.every((image) => typeof image === "string")))
   ) {
     throw new Error("La respuesta de voluntariado administrado no tiene el formato esperado.");
   }
   const stringArray = (input: unknown) => Array.isArray(input)
     ? input.filter((item): item is string => typeof item === "string")
     : [];
+  const imagePaths = Array.isArray(value.imagenes)
+    ? value.imagenes
+    : typeof value.imagen === "string"
+      ? [value.imagen]
+      : [];
+  const images = [...new Set(
+    imagePaths
+      .map((image) => resolveApiAssetUrl(image))
+      .filter((image): image is string => image !== null),
+  )];
   return {
     id: asString(value.id, "id"),
     titulo: asString(value.titulo, "título"),
@@ -135,6 +176,8 @@ export function parseManagedVolunteer(value: unknown): ManagedVolunteer {
     cupo: value.cupo,
     requisitos: stringArray(value.requisitos),
     materiales: stringArray(value.materiales),
+    imagen: images[0] ?? null,
+    imagenes: images,
     estado: asString(value.estado, "estado"),
     iniciadoPorFecha: value.iniciadoPorFecha,
     tokenAsistencia: typeof value.tokenAsistencia === "string" ? value.tokenAsistencia : null,
@@ -277,11 +320,12 @@ export async function fetchAdminOrganizers(token: string, signal?: AbortSignal):
 export async function createManagedVolunteer(
   token: string,
   values: VolunteerFormValues,
+  images: VolunteerImageUpload[] = [],
 ): Promise<ManagedVolunteer> {
   return parseManagedVolunteer(await requestApiJson("/api/admin/voluntariados", {
     method: "POST",
     token,
-    body: values,
+    formData: volunteerFormData(values, images, [], false),
   }).then((result) => {
     if (!isRecord(result) || !("data" in result)) {
       throw new Error("La API no confirmó la creación del voluntariado.");
@@ -294,16 +338,47 @@ export async function updateManagedVolunteer(
   token: string,
   id: string,
   values: Partial<VolunteerFormValues>,
+  images: VolunteerImageUpload[] = [],
+  imagesToRemove: number[] = [],
 ): Promise<ManagedVolunteer> {
   const result = await requestApiJson(`/api/admin/voluntariados/${encodeURIComponent(id)}`, {
-    method: "PUT",
+    method: "POST",
     token,
-    body: values,
+    formData: volunteerFormData(values, images, imagesToRemove, true),
   });
   if (!isRecord(result) || !("data" in result)) {
     throw new Error("La API no confirmó la actualización del voluntariado.");
   }
   return parseManagedVolunteer(result.data);
+}
+
+function volunteerFormData(
+  values: VolunteerFormValues | Partial<VolunteerFormValues>,
+  images: VolunteerImageUpload[],
+  imagesToRemove: number[],
+  updating: boolean,
+): FormData {
+  const formData = new FormData();
+  if (updating) formData.append("_method", "PUT");
+
+  for (const [key, value] of Object.entries(values)) {
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) formData.append(`${key}[]`, String(item));
+    } else {
+      formData.append(key, String(value));
+    }
+  }
+
+  for (const image of images) {
+    const name = image.fileName?.trim() || `voluntariado-${Date.now()}.jpg`;
+    const type = image.mimeType || "image/jpeg";
+    if (image.file) formData.append("imagenes[]", image.file, name);
+    else formData.append("imagenes[]", { uri: image.uri, name, type } as unknown as Blob);
+  }
+  for (const index of imagesToRemove) formData.append("imagenesEliminar[]", String(index));
+
+  return formData;
 }
 
 export async function deleteManagedVolunteer(token: string, id: string): Promise<void> {

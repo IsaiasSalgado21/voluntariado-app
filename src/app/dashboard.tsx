@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
+import { AppNavigationBar } from "@/components/regenera-ui";
 import { getDashboardForRole } from "@/features/dashboard";
 import { useSession } from "@/features/auth/use-session";
 import { useEffect, useState } from "react";
@@ -113,13 +114,10 @@ export default function DashboardScreen() {
         { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 28 },
       ]}
     >
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => router.canGoBack() ? router.back() : router.replace("/mas")}
-        style={styles.backButton}
-      >
-        <Text style={styles.backText}>‹  Más opciones</Text>
-      </Pressable>
+      <AppNavigationBar
+        backLabel="Más opciones"
+        onBack={() => router.canGoBack() ? router.back() : router.replace("/mas")}
+      />
       <Text style={styles.eyebrow}>REGENERA · TU ESPACIO</Text>
 
       {status === "loading" ? (
@@ -220,8 +218,6 @@ function formatRole(role: string): string {
 
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 18, gap: 13 },
-  backButton: { paddingVertical: 8 },
-  backText: { color: "#164F3D", fontSize: 15, fontWeight: "700" },
   eyebrow: { color: "#164F3D", fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
   hero: { padding: 20, borderRadius: 20, gap: 9 },
   summaryGrid: { flexDirection: "row", flexWrap: "wrap", gap: 9 },

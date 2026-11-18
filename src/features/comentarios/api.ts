@@ -19,6 +19,10 @@ export type VolunteerComment = {
   puedeEliminar: boolean;
 };
 
+export function canCreateCommentForRole(role: string | null | undefined): boolean {
+  return role === "usuario" || role === "organizador" || role === "admin";
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

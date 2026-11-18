@@ -10,8 +10,10 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/theme";
+import { Colors, RegeneraColors } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
+import { useSession } from "@/features/auth/use-session";
+import { RegeneraCard, RegeneraPageHeader, RegeneraSectionHeading } from "@/components/regenera-ui";
 import {
   fetchPlaces,
   fetchVoluntariados,
@@ -24,22 +26,15 @@ import {
   type VolunteerFilters,
 } from "@/features/voluntariados/filters";
 import { VolunteerPhoto } from "@/features/voluntariados/volunteer-photo";
-
-const CATEGORIES = [
-  ["", "Todos"],
-  ["limpieza", "Limpieza"],
-  ["restauracion", "Restauración"],
-  ["conservacion", "Conservación"],
-  ["reforestacion", "Reforestación"],
-  ["monitoreo", "Monitoreo"],
-  ["educacion-ambiental", "Educación ambiental"],
-] as const;
+import { VolunteerSymbol } from "@/features/voluntariados/volunteer-symbol";
 
 export default function VolunteerListScreen() {
   const insets = useSafeAreaInsets();
   const theme = useTheme();
   const scheme = Colors.dark.background === theme.background ? "dark" : "light";
   const colors = Colors[scheme];
+  const { status, user } = useSession();
+  const canCreate = status === "authenticated" && (user?.rol === "admin" || user?.rol === "organizador");
   const [items, setItems] = useState<VolunteerMapItem[]>([]);
   const [places, setPlaces] = useState<PlaceOption[]>([]);
   const [filters, setFilters] = useState<VolunteerFilters>({});
@@ -89,9 +84,6 @@ export default function VolunteerListScreen() {
     [items, search],
   );
   const activeFilterLabels = [
-    filters.categoria
-      ? CATEGORIES.find(([value]) => value === filters.categoria)?.[1] ?? filters.categoria
-      : null,
     filters.lugar_id
       ? places.find((place) => place.id === filters.lugar_id)?.nombre ?? "Lugar"
       : null,
@@ -138,7 +130,10 @@ export default function VolunteerListScreen() {
       onPress={onPress}
       style={[
         styles.choice,
-        { backgroundColor: selected ? "#164F3D" : colors.backgroundElement },
+        {
+          backgroundColor: selected ? RegeneraColors.primary : colors.backgroundElement,
+          borderColor: selected ? RegeneraColors.primary : colors.backgroundSelected,
+        },
       ]}
     >
       <Text style={{ color: selected ? "#FFFFFF" : colors.text, fontWeight: "600" }}>
@@ -156,11 +151,22 @@ export default function VolunteerListScreen() {
       ]}
       keyboardShouldPersistTaps="handled"
     >
-      <Text style={styles.eyebrow}>REGENERA · BAJA CALIFORNIA SUR</Text>
-      <Text style={[styles.title, { color: colors.text }]}>Voluntariados</Text>
-      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-        Encuentra una actividad ambiental y conoce cómo participar.
-      </Text>
+      <RegeneraPageHeader
+        eyebrow="REGIÓN · BAJA CALIFORNIA SUR"
+        title="Voluntariados"
+        subtitle="Encuentra una actividad ambiental y conoce cómo participar."
+      />
+
+      {canCreate && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Crear voluntariado"
+          onPress={() => router.push("/organizador/voluntariado-editor")}
+          style={styles.createButton}
+        >
+          <Text style={styles.createButtonText}>＋ Crear voluntariado</Text>
+        </Pressable>
+      )}
 
       <TextInput
         accessibilityLabel="Buscar por título, descripción, categoría o lugar"
@@ -168,11 +174,18 @@ export default function VolunteerListScreen() {
         placeholderTextColor={colors.textSecondary}
         value={search}
         onChangeText={setSearch}
-        style={[styles.searchInput, { color: colors.text, backgroundColor: colors.backgroundElement }]}
+        style={[
+          styles.searchInput,
+          {
+            color: colors.text,
+            borderColor: colors.backgroundSelected,
+            backgroundColor: colors.backgroundElement,
+          },
+        ]}
         returnKeyType="search"
       />
 
-      <View style={[styles.filterSection, { backgroundColor: colors.backgroundElement }]}>
+      <RegeneraCard style={styles.filterSection}>
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ expanded: filtersExpanded }}
@@ -180,28 +193,25 @@ export default function VolunteerListScreen() {
           style={styles.filterHeader}
         >
           <View style={styles.filterHeading}>
-            <Text style={[styles.filterTitle, { color: colors.text }]}>
-              Filtros{activeFilterLabels.length > 0 ? ` · ${activeFilterLabels.length}` : ""}
-            </Text>
+            <View style={styles.filterTitleRow}>
+              <VolunteerSymbol name="voluntariado" size={18} />
+              <Text style={[styles.filterTitle, { color: colors.text }]}>
+                Filtros{activeFilterLabels.length > 0 ? ` · ${activeFilterLabels.length}` : ""}
+              </Text>
+            </View>
             <Text numberOfLines={1} style={[styles.filterSummary, { color: colors.textSecondary }]}>
-              {activeFilterLabels.length > 0 ? activeFilterLabels.join(" · ") : "Categoría, lugar, fecha y cupo"}
+              {activeFilterLabels.length > 0 ? activeFilterLabels.join(" · ") : "Lugar, fecha y cupo"}
             </Text>
           </View>
-          <Text style={styles.filterToggle}>{filtersExpanded ? "Ocultar ▲" : "Mostrar ▼"}</Text>
+          <Text style={styles.filterToggle}>{filtersExpanded ? "Ocultar −" : "Mostrar ＋"}</Text>
         </Pressable>
 
         {filtersExpanded && (
           <View style={styles.filterPanel}>
-            <Text style={[styles.sectionLabel, { color: colors.text }]}>Categoría</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.choices}>
-              {CATEGORIES.map(([value, label]) =>
-                renderChoice(`category-${value || "all"}`, label, (draftFilters.categoria ?? "") === value, () =>
-                  updateDraft("categoria", value || undefined),
-                ),
-              )}
-            </ScrollView>
-
-            <Text style={[styles.sectionLabel, { color: colors.text }]}>Lugar</Text>
+            <View style={styles.filterLabel}>
+              <VolunteerSymbol name="ubicacion" size={18} />
+              <Text style={[styles.sectionLabel, { color: colors.text }]}>Lugar</Text>
+            </View>
             {placesError ? (
               <Text style={styles.inlineError}>{placesError}</Text>
             ) : places.length === 0 ? (
@@ -219,7 +229,10 @@ export default function VolunteerListScreen() {
 
             <View style={styles.dateRow}>
               <View style={styles.dateField}>
-                <Text style={[styles.sectionLabel, { color: colors.text }]}>Desde</Text>
+                <View style={styles.filterLabel}>
+                  <VolunteerSymbol name="calendario" size={16} />
+                  <Text style={[styles.sectionLabel, { color: colors.text }]}>Desde</Text>
+                </View>
                 <TextInput
                   accessibilityLabel="Fecha desde, formato año-mes-día"
                   placeholder="AAAA-MM-DD"
@@ -232,7 +245,10 @@ export default function VolunteerListScreen() {
                 />
               </View>
               <View style={styles.dateField}>
-                <Text style={[styles.sectionLabel, { color: colors.text }]}>Hasta</Text>
+                <View style={styles.filterLabel}>
+                  <VolunteerSymbol name="calendario" size={16} />
+                  <Text style={[styles.sectionLabel, { color: colors.text }]}>Hasta</Text>
+                </View>
                 <TextInput
                   accessibilityLabel="Fecha hasta, formato año-mes-día"
                   placeholder="AAAA-MM-DD"
@@ -247,7 +263,10 @@ export default function VolunteerListScreen() {
             </View>
 
             <View style={styles.availabilityRow}>
-              <Text style={[styles.sectionLabel, { color: colors.text }]}>Cupo</Text>
+              <View style={styles.filterLabel}>
+                <VolunteerSymbol name="participantes" size={18} />
+                <Text style={[styles.sectionLabel, { color: colors.text }]}>Cupo</Text>
+              </View>
               <View style={styles.choices}>
                 {renderChoice("capacity-all", "Todos", draftFilters.disponibles === undefined, () =>
                   updateDraft("disponibles", undefined),
@@ -272,10 +291,10 @@ export default function VolunteerListScreen() {
             </View>
           </View>
         )}
-      </View>
+      </RegeneraCard>
 
       <View style={styles.resultsHeading}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Próximas actividades</Text>
+        <RegeneraSectionHeading eyebrow="COMUNIDAD" title="Próximas actividades" />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Actualizar voluntariados"
@@ -299,46 +318,67 @@ export default function VolunteerListScreen() {
           </Pressable>
         </View>
       ) : filteredItems.length === 0 ? (
-        <View style={[styles.stateBox, { backgroundColor: colors.backgroundElement }]}>
+        <RegeneraCard style={styles.stateBox}>
           <Text style={[styles.cardTitle, { color: colors.text }]}>No encontramos actividades</Text>
           <Text style={[styles.helper, { color: colors.textSecondary }]}>
             Prueba otros filtros o cambia el texto de búsqueda.
           </Text>
-        </View>
+        </RegeneraCard>
       ) : (
         <View style={styles.list}>
           {filteredItems.map((item) => (
-            <Pressable
-              key={item.id}
-              accessibilityRole="button"
-              accessibilityLabel={`Ver voluntariado ${item.titulo}`}
-              onPress={() => router.push({ pathname: "/voluntariados/[id]", params: { id: item.id } })}
-              style={({ pressed }) => [
-                styles.card,
-                { backgroundColor: colors.backgroundElement, opacity: pressed ? 0.86 : 1 },
-              ]}
-            >
-              <VolunteerPhoto
-                uri={item.imagen ?? item.imagenes[0] ?? null}
-                title={item.titulo}
-                variant="card"
-              />
-              <View style={styles.cardTopRow}>
-                <Text style={styles.categoryBadge}>{item.categoria || "Actividad ambiental"}</Text>
-                <Text style={[styles.capacity, { color: item.lleno ? "#A14537" : "#286447" }]}>
-                  {item.lleno ? "Cupo lleno" : `${Math.max(0, item.cupo - item.inscripciones_activas)} lugares`}
+            <View key={item.id} style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.backgroundSelected }]}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Ver voluntariado ${item.titulo}`}
+                onPress={() => router.push({ pathname: "/voluntariados/[id]", params: { id: item.id } })}
+                style={({ pressed }) => [styles.cardMain, { opacity: pressed ? 0.86 : 1 }]}
+              >
+                <VolunteerPhoto
+                  uri={item.imagen ?? item.imagenes[0] ?? null}
+                  title={item.titulo}
+                  variant="card"
+                />
+                <View style={styles.cardTopRow}>
+                  <Text style={[styles.categoryBadge, { backgroundColor: colors.backgroundSelected, color: colors.text }]}>
+                    {item.categoria || "Actividad ambiental"}
+                  </Text>
+                  <View style={[styles.capacityBadge, { backgroundColor: item.lleno ? "#F4DDDA" : colors.backgroundSelected }]}>
+                    <VolunteerSymbol name="participantes" size={14} />
+                    <Text style={[styles.capacity, { color: item.lleno ? RegeneraColors.error : RegeneraColors.primary }]}>
+                      {item.lleno ? "Cupo lleno" : `${Math.max(0, item.cupo - item.inscripciones_activas)} lugares`}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>{item.titulo}</Text>
+                <Text numberOfLines={3} style={[styles.cardDescription, { color: colors.textSecondary }]}>
+                  {item.descripcion}
                 </Text>
+                <View style={styles.cardMetaRows}>
+                  <CardMeta icon="calendario" value={formatDate(item.fecha_inicio)} colors={colors} />
+                  {item.lugar_nombre && <CardMeta icon="ubicacion" value={item.lugar_nombre} colors={colors} />}
+                </View>
+              </Pressable>
+              <View style={[styles.cardActions, { borderTopColor: colors.backgroundSelected }]}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Ver ubicación de ${item.titulo} en el mapa de Regenera`}
+                  onPress={() => router.push({ pathname: "/", params: { voluntariado: item.id } })}
+                  style={styles.mapAction}
+                >
+                  <VolunteerSymbol name="ubicacion" size={18} />
+                  <Text style={styles.cardLink}>Ver en mapa</Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Ver detalles de ${item.titulo}`}
+                  onPress={() => router.push({ pathname: "/voluntariados/[id]", params: { id: item.id } })}
+                  style={styles.detailsAction}
+                >
+                  <Text style={styles.cardLink}>Ver detalle →</Text>
+                </Pressable>
               </View>
-              <Text style={[styles.cardTitle, { color: colors.text }]}>{item.titulo}</Text>
-              <Text numberOfLines={3} style={[styles.cardDescription, { color: colors.textSecondary }]}>
-                {item.descripcion}
-              </Text>
-              <Text style={[styles.cardMeta, { color: colors.textSecondary }]}>
-                {formatDate(item.fecha_inicio)}
-                {item.lugar_nombre ? `  ·  ${item.lugar_nombre}` : ""}
-              </Text>
-              <Text style={styles.cardLink}>Ver detalles →</Text>
-            </Pressable>
+            </View>
           ))}
         </View>
       )}
@@ -362,22 +402,38 @@ function formatDate(value: string | null): string {
   }).format(date);
 }
 
+function CardMeta({
+  icon,
+  value,
+  colors,
+}: {
+  icon: "calendario" | "ubicacion";
+  value: string;
+  colors: typeof Colors.light | typeof Colors.dark;
+}) {
+  return (
+    <View style={styles.cardMeta}>
+      <VolunteerSymbol name={icon} size={16} />
+      <Text numberOfLines={1} style={{ color: colors.textSecondary }}>{value}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 18, gap: 12 },
-  eyebrow: { color: "#164F3D", fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
-  title: { fontSize: 28, fontWeight: "800" },
-  subtitle: { fontSize: 15, lineHeight: 21, marginBottom: 4 },
-  searchInput: { borderRadius: 14, paddingHorizontal: 15, paddingVertical: 13, fontSize: 15 },
-  filterSection: { borderRadius: 15, paddingHorizontal: 14, paddingVertical: 11 },
+  searchInput: { minHeight: 50, borderWidth: 1, borderRadius: 14, paddingHorizontal: 15, paddingVertical: 12, fontSize: 15 },
+  filterSection: { paddingHorizontal: 14, paddingVertical: 11 },
   filterHeader: { minHeight: 40, flexDirection: "row", alignItems: "center", gap: 12 },
   filterHeading: { flex: 1, gap: 2 },
+  filterTitleRow: { flexDirection: "row", alignItems: "center", gap: 7 },
   filterTitle: { fontSize: 14, fontWeight: "800" },
   filterSummary: { fontSize: 12 },
-  filterToggle: { color: "#164F3D", fontSize: 12, fontWeight: "800" },
+  filterToggle: { color: RegeneraColors.primary, fontSize: 12, fontWeight: "800" },
   filterPanel: { gap: 10, paddingTop: 10 },
   sectionLabel: { fontSize: 14, fontWeight: "700", marginTop: 4 },
-  choices: { flexDirection: "row", alignItems: "center", gap: 8, paddingRight: 8 },
-  choice: { paddingHorizontal: 13, paddingVertical: 9, borderRadius: 18 },
+  filterLabel: { flexDirection: "row", alignItems: "center", gap: 7 },
+  choices: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 2, paddingRight: 8 },
+  choice: { borderWidth: 1, paddingHorizontal: 13, paddingVertical: 8, borderRadius: 18 },
   helper: { fontSize: 14, lineHeight: 20, marginTop: 6 },
   inlineError: { color: "#A14537", fontSize: 13, lineHeight: 19 },
   dateRow: { flexDirection: "row", gap: 10 },
@@ -385,22 +441,29 @@ const styles = StyleSheet.create({
   dateInput: { borderRadius: 12, paddingHorizontal: 11, paddingVertical: 11, fontSize: 14 },
   availabilityRow: { gap: 8 },
   actions: { flexDirection: "row", gap: 10, marginTop: 2 },
-  primaryButton: { backgroundColor: "#164F3D", borderRadius: 13, minHeight: 44, justifyContent: "center", alignItems: "center", paddingHorizontal: 16 },
+  primaryButton: { backgroundColor: RegeneraColors.primary, borderRadius: 13, minHeight: 44, justifyContent: "center", alignItems: "center", paddingHorizontal: 16 },
   primaryButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "700" },
+  createButton: { alignSelf: "flex-start", minHeight: 44, justifyContent: "center", paddingHorizontal: 15, borderRadius: 13, backgroundColor: RegeneraColors.softGreen },
+  createButtonText: { color: RegeneraColors.primary, fontSize: 14, fontWeight: "800" },
   secondaryButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 14 },
   secondaryButtonText: { fontSize: 14, fontWeight: "700" },
   resultsHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 14 },
-  sectionTitle: { fontSize: 20, fontWeight: "800" },
-  refreshText: { color: "#164F3D", fontWeight: "700" },
+  refreshText: { color: RegeneraColors.primary, fontWeight: "700" },
   list: { gap: 12 },
-  card: { padding: 12, borderRadius: 18, gap: 9, overflow: "hidden" },
+  card: { overflow: "hidden", borderWidth: StyleSheet.hairlineWidth, borderRadius: 18 },
+  cardMain: { padding: 12, gap: 10 },
   cardTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
-  categoryBadge: { color: "#164F3D", backgroundColor: "#DCE8DF", borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5, fontSize: 11, fontWeight: "700", overflow: "hidden" },
+  categoryBadge: { maxWidth: "55%", borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5, fontSize: 10, fontWeight: "700", overflow: "hidden" },
+  capacityBadge: { flexDirection: "row", alignItems: "center", gap: 5, borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5 },
   capacity: { fontSize: 12, fontWeight: "700" },
   cardTitle: { fontSize: 17, fontWeight: "800", lineHeight: 23 },
   cardDescription: { fontSize: 14, lineHeight: 20 },
-  cardMeta: { fontSize: 12, lineHeight: 18, fontWeight: "600" },
-  cardLink: { color: "#164F3D", fontSize: 14, fontWeight: "700", marginTop: 2 },
+  cardMetaRows: { gap: 7 },
+  cardMeta: { flexDirection: "row", alignItems: "center", gap: 7 },
+  cardActions: { flexDirection: "row", justifyContent: "space-between", borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 14, paddingVertical: 8 },
+  mapAction: { flexDirection: "row", alignItems: "center", gap: 5, minHeight: 38 },
+  detailsAction: { justifyContent: "center", minHeight: 38, paddingHorizontal: 4 },
+  cardLink: { color: RegeneraColors.primary, fontSize: 13, fontWeight: "700" },
   stateBox: { minHeight: 120, justifyContent: "center", alignItems: "center", borderRadius: 18, padding: 18, gap: 8 },
   dataNote: { fontSize: 12, lineHeight: 17, marginTop: 4, marginBottom: 8 },
 });

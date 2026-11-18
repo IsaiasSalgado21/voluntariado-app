@@ -24,6 +24,15 @@ export const Colors = {
   },
 } as const;
 
+export const RegeneraColors = {
+  primary: "#164F3D",
+  accent: "#2F8064",
+  softGreen: "#DCE8DF",
+  softBorder: "#DFE9DF",
+  error: "#A14537",
+  warning: "#775613",
+} as const;
+
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
 export const Fonts = Platform.select({

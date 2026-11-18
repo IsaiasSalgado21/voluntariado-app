@@ -1,8 +1,10 @@
 import DateTimePicker, { type DateTimePickerEvent } from "@/features/organizador/date-time-picker";
 import { router, useLocalSearchParams } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   Platform,
   ScrollView,
@@ -12,8 +14,9 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/theme";
+import { Colors, RegeneraColors } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
+import { AppNavigationBar, RegeneraCard, RegeneraPageHeader, RegeneraSectionHeading } from "@/components/regenera-ui";
 import { useSession } from "@/features/auth/use-session";
 import {
   createManagedVolunteer,
@@ -25,6 +28,7 @@ import {
   normalizeCategory,
   updateManagedCommentsDefault,
   updateManagedVolunteer,
+  type VolunteerImageUpload,
   type ManagedPlaceOption,
   type OrganizerOption,
   type VolunteerCategoryOption,
@@ -78,6 +82,9 @@ export default function ManagedVolunteerEditorScreen() {
   const [commentsDefault, setCommentsDefault] = useState<CommentsDefault>("publico");
   const [initialCommentsDefault, setInitialCommentsDefault] = useState<CommentsDefault>("publico");
   const [createdVolunteerId, setCreatedVolunteerId] = useState<string | null>(null);
+  const [existingImages, setExistingImages] = useState<string[]>([]);
+  const [removedImages, setRemovedImages] = useState<number[]>([]);
+  const [selectedImages, setSelectedImages] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [picker, setPicker] = useState<{ field: DateField; mode: "date" | "time" } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -127,6 +134,9 @@ export default function ManagedVolunteerEditorScreen() {
             requisitos: activity.requisitos.join("\n"),
             materiales: activity.materiales.join("\n"),
           });
+          setExistingImages(activity.imagenes);
+          setRemovedImages([]);
+          setSelectedImages([]);
           setIsCustomCategory(!availableCategories.some((category) => category.value === activity.categoria));
         }
         if (user?.rol === "admin") {
@@ -165,6 +175,53 @@ export default function ManagedVolunteerEditorScreen() {
     if (event.type !== "set" || (Platform.OS !== "ios" && Platform.OS !== "web")) {
       setPicker(null);
     }
+  };
+
+  const pickImages = async () => {
+    setError(null);
+    try {
+      if (Platform.OS !== "web") {
+        const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!permission.granted) {
+          setError("Permite el acceso a Fotos para adjuntar imágenes.");
+          return;
+        }
+      }
+      const available = Math.max(
+        0,
+        10 - (existingImages.length - removedImages.length) - selectedImages.length,
+      );
+      if (available === 0) {
+        setError("Cada voluntariado puede tener un máximo de 10 imágenes.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        selectionLimit: available,
+        quality: 0.8,
+      });
+      if (result.canceled) return;
+      const selectedAssets = result.assets.slice(0, available);
+      const validAssets = selectedAssets.filter((asset) => {
+        if (asset.fileSize !== null && asset.fileSize !== undefined && asset.fileSize > 5 * 1024 * 1024) {
+          return false;
+        }
+        return true;
+      });
+      setSelectedImages((current) => [...current, ...validAssets]);
+      if (selectedAssets.length !== result.assets.length) {
+        setError("Cada voluntariado puede tener un máximo de 10 imágenes.");
+      } else if (validAssets.length !== selectedAssets.length) {
+        setError("Cada imagen debe pesar 5 MB o menos. Las imágenes más grandes no se agregaron.");
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "No se pudo abrir la biblioteca de fotos.");
+    }
+  };
+
+  const removeExistingImage = (index: number) => {
+    setRemovedImages((current) => current.includes(index) ? current : [...current, index]);
   };
 
   const save = async () => {
@@ -207,10 +264,11 @@ export default function ManagedVolunteerEditorScreen() {
     setError(null);
     try {
       let savedVolunteerId = volunteerId ?? createdVolunteerId;
+      const images = selectedImages.map(toVolunteerImageUpload);
       if (savedVolunteerId) {
-        await updateManagedVolunteer(token, savedVolunteerId, payload);
+        await updateManagedVolunteer(token, savedVolunteerId, payload, images, removedImages);
       } else {
-        const created = await createManagedVolunteer(token, payload);
+        const created = await createManagedVolunteer(token, payload, images);
         savedVolunteerId = created.id;
         setCreatedVolunteerId(created.id);
       }
@@ -237,21 +295,21 @@ export default function ManagedVolunteerEditorScreen() {
       ]}
       keyboardShouldPersistTaps="handled"
     >
-      <Pressable onPress={() => router.canGoBack() ? router.back() : router.replace("/organizador/voluntariados")} style={styles.backButton}>
-        <Text style={styles.backText}>‹  Voluntariados</Text>
-      </Pressable>
-      <Text style={styles.eyebrow}>REGENERA · ACTIVIDADES</Text>
-      <Text style={[styles.title, { color: colors.text }]}>
-        {volunteerId ? "Editar voluntariado" : "Crear voluntariado"}
-      </Text>
-      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-        Completa los detalles. La API valida lugar, fechas, horarios, cupo y permisos antes de guardar.
-      </Text>
+      <AppNavigationBar
+        backLabel="Voluntariados"
+        onBack={() => router.canGoBack() ? router.back() : router.replace("/organizador/voluntariados")}
+      />
+      <RegeneraPageHeader
+        eyebrow="REGENERA · ACTIVIDADES"
+        title={volunteerId ? "Editar voluntariado" : "Crear voluntariado"}
+        subtitle="Completa los detalles. La API valida lugar, fechas, horarios, cupo y permisos antes de guardar."
+      />
 
       {loading ? (
         <ActivityIndicator size="large" color="#164F3D" />
       ) : (
-        <View style={styles.form}>
+        <RegeneraCard style={styles.form}>
+          <RegeneraSectionHeading eyebrow="DETALLES" title="Información de la actividad" />
           {field("Título", form.titulo, (value) => setText("titulo", value), colors.text, "Ej. Limpieza de playa")}
           {field("Descripción", form.descripcion, (value) => setText("descripcion", value), colors.text, "Describe la actividad", true)}
           <Text style={styles.label}>Categoría recomendada</Text>
@@ -343,6 +401,60 @@ export default function ManagedVolunteerEditorScreen() {
           {field("Requisitos (uno por línea)", form.requisitos, (value) => setText("requisitos", value), colors.text, "Opcional", true)}
           {field("Materiales (uno por línea)", form.materiales, (value) => setText("materiales", value), colors.text, "Opcional", true)}
 
+          <RegeneraCard style={[styles.imagesCard, { backgroundColor: colors.background }]}>
+            <RegeneraSectionHeading
+              eyebrow="GALERÍA"
+              title="Imágenes del voluntariado"
+              subtitle={`${existingImages.length - removedImages.length + selectedImages.length} de 10 imágenes · Máximo 5 MB por imagen`}
+            />
+            <View style={styles.imageGrid}>
+              {existingImages.map((uri, index) => {
+                const removed = removedImages.includes(index);
+                return (
+                <View key={`${uri}-${index}`} style={[styles.imageItem, removed && styles.removedImage]}>
+                  <Image source={{ uri }} resizeMode="cover" style={styles.imagePreview} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`${removed ? "Restaurar" : "Quitar"} imagen existente ${index + 1}`}
+                    onPress={() => removed
+                      ? setRemovedImages((current) => current.filter((itemIndex) => itemIndex !== index))
+                      : removeExistingImage(index)}
+                    style={[styles.imageRemoveButton, removed && styles.imageRestoreButton]}
+                  >
+                    <Text style={[styles.imageRemoveText, removed && styles.imageRestoreText]}>
+                      {removed ? "Restaurar" : "Quitar"}
+                    </Text>
+                  </Pressable>
+                </View>
+                );
+              })}
+              {selectedImages.map((asset, index) => (
+                <View key={`${asset.uri}-${index}`} style={styles.imageItem}>
+                  <Image source={{ uri: asset.uri }} resizeMode="cover" style={styles.imagePreview} />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`Quitar imagen nueva ${index + 1}`}
+                    onPress={() => setSelectedImages((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                    style={styles.imageRemoveButton}
+                  >
+                    <Text style={styles.imageRemoveText}>Quitar</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              disabled={existingImages.length - removedImages.length + selectedImages.length >= 10}
+              onPress={() => void pickImages()}
+              style={[
+                styles.imagePickButton,
+                existingImages.length - removedImages.length + selectedImages.length >= 10 && styles.disabled,
+              ]}
+            >
+              <Text style={styles.imagePickText}>＋  Agregar imágenes</Text>
+            </Pressable>
+          </RegeneraCard>
+
           <View style={styles.commentConfig}>
             <Text style={styles.label}>Visibilidad predeterminada de comentarios</Text>
             <View style={styles.chipList}>
@@ -378,7 +490,7 @@ export default function ManagedVolunteerEditorScreen() {
           <Pressable disabled={saving} onPress={() => void save()} style={[styles.primaryButton, saving && styles.disabled]}>
             <Text style={styles.primaryButtonText}>{saving ? "Guardando…" : volunteerId ? "Guardar cambios" : "Crear voluntariado"}</Text>
           </Pressable>
-        </View>
+        </RegeneraCard>
       )}
     </ScrollView>
   );
@@ -439,12 +551,9 @@ function toLines(value: string): string[] {
 
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 18, gap: 13 },
-  backButton: { paddingVertical: 8 },
-  backText: { color: "#164F3D", fontSize: 15, fontWeight: "700" },
-  eyebrow: { color: "#164F3D", fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
-  title: { fontSize: 27, fontWeight: "800" },
-  subtitle: { fontSize: 14, lineHeight: 20 },
-  form: { gap: 14 },
+
+  form: { gap: 14, padding: 16 },
+  imagesCard: { padding: 13, gap: 12, backgroundColor: "#F5F7F2" },
   field: { gap: 6 },
   commentConfig: { gap: 8, padding: 12, borderRadius: 12, backgroundColor: "#FFFFFF" },
   label: { color: "#47594F", fontSize: 13, fontWeight: "700" },
@@ -455,6 +564,16 @@ const styles = StyleSheet.create({
   selectedChip: { borderColor: "#164F3D", backgroundColor: "#DCE8DF" },
   chipText: { color: "#47594F", fontSize: 12, fontWeight: "600" },
   selectedChipText: { color: "#164F3D" },
+  imageGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  imageItem: { width: 92, gap: 5 },
+  removedImage: { opacity: 0.58 },
+  imagePreview: { width: 92, height: 76, borderRadius: 10, backgroundColor: "#DCE8DF" },
+  imageRemoveButton: { minHeight: 34, alignItems: "center", justifyContent: "center", borderRadius: 9, backgroundColor: "#F4DDDA" },
+  imageRemoveText: { color: RegeneraColors.error, fontSize: 11, fontWeight: "700" },
+  imageRestoreButton: { backgroundColor: "#DCE8DF" },
+  imageRestoreText: { color: RegeneraColors.primary },
+  imagePickButton: { minHeight: 44, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#AFC5B4", borderRadius: 12, backgroundColor: "#DCE8DF" },
+  imagePickText: { color: RegeneraColors.primary, fontSize: 13, fontWeight: "700" },
   hint: { fontSize: 12, lineHeight: 18 },
   dateRow: { minHeight: 46, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#DCE3DD" },
   dateValue: { color: "#164F3D", fontSize: 14, fontWeight: "700" },
@@ -464,3 +583,12 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.6 },
   error: { color: "#9E3030", fontSize: 13, lineHeight: 19 },
 });
+
+function toVolunteerImageUpload(asset: ImagePicker.ImagePickerAsset): VolunteerImageUpload {
+  return {
+    uri: asset.uri,
+    fileName: asset.fileName ?? null,
+    mimeType: asset.mimeType ?? null,
+    ...(asset.file ? { file: asset.file } : {}),
+  };
+}

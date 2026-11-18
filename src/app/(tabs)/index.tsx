@@ -1,5 +1,5 @@
 import * as Location from "expo-location";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -164,6 +164,8 @@ function MapMarkerIcon({ kind }: { kind: MapMarkerKind }) {
 }
 
 export default function MapTabScreen() {
+  const { voluntariado } = useLocalSearchParams<{ voluntariado?: string | string[] }>();
+  const selectedVolunteerId = Array.isArray(voluntariado) ? voluntariado[0] : voluntariado;
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const scheme = colorScheme === "dark" ? "dark" : "light";
@@ -200,6 +202,21 @@ export default function MapTabScreen() {
   const layerErrors = Object.entries(layerStatus)
     .filter(([, status]) => status.error)
     .map(([layer, status]) => `${LAYER_LABELS[layer as MapLayer]}: ${status.error}`);
+
+  useEffect(() => {
+    if (!selectedVolunteerId) return;
+    const volunteer = volunteers.find((item) => item.id === selectedVolunteerId);
+    if (!volunteer) return;
+
+    setVisibleLayers((current) => ({ ...current, voluntariados: true }));
+    setSelectedFeature({ layer: "voluntariados", data: volunteer });
+    setRegion({
+      latitude: volunteer.lat,
+      longitude: volunteer.lng,
+      latitudeDelta: 0.035,
+      longitudeDelta: 0.035,
+    });
+  }, [selectedVolunteerId, volunteers]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -250,12 +267,17 @@ export default function MapTabScreen() {
       return;
     }
 
+    if (selectedVolunteerId && volunteers.some((item) => item.id === selectedVolunteerId)) {
+      didFitInitialResults.current = true;
+      return;
+    }
+
     const initialRegion = regionForFeatures(mapFeatures);
     if (initialRegion) {
       setRegion(initialRegion);
       didFitInitialResults.current = true;
     }
-  }, [allLayersLoaded, hasLocationPermission, mapFeatures, permissionChecked]);
+  }, [allLayersLoaded, hasLocationPermission, mapFeatures, permissionChecked, selectedVolunteerId, volunteers]);
 
   useEffect(() => {
     let isMounted = true;
@@ -269,7 +291,7 @@ export default function MapTabScreen() {
         setHasLocationPermission(permission.granted);
         setCanAskAgain(permission.canAskAgain);
 
-        if (permission.granted) {
+        if (permission.granted && !selectedVolunteerId) {
           setIsLocationLoading(true);
           const currentLocation = await Location.getCurrentPositionAsync({});
           if (!isMounted) return;
@@ -292,7 +314,7 @@ export default function MapTabScreen() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [selectedVolunteerId]);
 
   const centerOnUser = async () => {
     setIsLocationLoading(true);

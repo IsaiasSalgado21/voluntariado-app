@@ -8,6 +8,16 @@ export type VolunteerFilters = {
   disponibles?: boolean;
 };
 
+export const VOLUNTEER_CATEGORIES = [
+  ["", "Todos"],
+  ["limpieza", "Limpieza"],
+  ["restauracion", "Restauración"],
+  ["conservacion", "Conservación"],
+  ["reforestacion", "Reforestación"],
+  ["monitoreo", "Monitoreo"],
+  ["educacion-ambiental", "Educación ambiental"],
+] as const;
+
 export function normalizeSearch(value: string): string {
   return value
     .normalize("NFD")

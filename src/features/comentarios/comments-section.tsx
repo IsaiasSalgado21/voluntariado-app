@@ -12,9 +12,11 @@ import {
 } from "react-native";
 import { Colors } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
+import { RegeneraCard, RegeneraSectionHeading } from "@/components/regenera-ui";
 import { ApiRequestError } from "@/features/api-client";
 import { useSession } from "@/features/auth/use-session";
 import {
+  canCreateCommentForRole,
   createVolunteerComment,
   deleteVolunteerComment,
   fetchVolunteerComments,
@@ -57,8 +59,8 @@ export function CommentsSection({ volunteerId, commentsDefault }: Props) {
   const [replyError, setReplyError] = useState<string | null>(null);
   const [deleteCandidateId, setDeleteCandidateId] = useState<string | null>(null);
 
-  const canCreate = user?.rol === "usuario";
-  const forcePrivate = canCreate && commentsDefault === "privado";
+  const canCreate = sessionStatus === "authenticated" && Boolean(token) && canCreateCommentForRole(user?.rol);
+  const forcePrivate = canCreate && user?.rol === "usuario" && commentsDefault === "privado";
   const commentsByParent = useMemo(() => {
     const grouped = new Map<string, VolunteerComment[]>();
     for (const comment of comments) {
@@ -411,9 +413,13 @@ export function CommentsSection({ volunteerId, commentsDefault }: Props) {
   };
 
   return (
-    <View style={[styles.section, { backgroundColor: colors.backgroundElement }]}>
+    <RegeneraCard style={styles.section}>
       <View style={styles.sectionHeader}>
-        <Text style={[styles.sectionTitle, { color: colors.text }]}>Comentarios</Text>
+        <RegeneraSectionHeading
+          eyebrow="CONVERSACIÓN"
+          title="Comentarios y dudas"
+          subtitle="Comparte preguntas o actualizaciones relacionadas con esta actividad."
+        />
         {token && (
           <Pressable
             accessibilityRole="button"
@@ -532,7 +538,7 @@ export function CommentsSection({ volunteerId, commentsDefault }: Props) {
           )}
         </>
       )}
-    </View>
+    </RegeneraCard>
   );
 }
 
@@ -627,7 +633,6 @@ function formatCommentDate(value: string | null): string {
 const styles = StyleSheet.create({
   section: { padding: 18, borderRadius: 18, gap: 14 },
   sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
-  sectionTitle: { fontSize: 20, fontWeight: "800" },
   refreshButton: { minHeight: 40, justifyContent: "center", paddingHorizontal: 8 },
   refreshText: { fontSize: 13, fontWeight: "700" },
   composer: { gap: 8, padding: 14, borderRadius: 14, backgroundColor: "#F1F4EF" },

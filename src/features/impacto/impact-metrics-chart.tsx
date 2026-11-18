@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from "react-native";
+import { RegeneraCard, RegeneraSectionHeading } from "@/components/regenera-ui";
 import type { ImpactRecord, ImpactTotal } from "./api";
 
 type Props = {
@@ -27,10 +28,11 @@ export function ImpactMetricsChart({
 
   return (
     <View style={styles.container}>
-      <Text style={[styles.heading, { color: textColor }]}>Resultados de la actividad</Text>
-      <Text style={[styles.caption, { color: secondaryTextColor }]}>
-        Cada gráfica muestra registros de una misma métrica y unidad.
-      </Text>
+      <RegeneraSectionHeading
+        eyebrow="HUELLA POSITIVA"
+        title="Resultados de la actividad"
+        subtitle="Cada gráfica muestra registros de una misma métrica y unidad."
+      />
       {totals.map((total) => {
         const series = records
           .filter((record) => record.tipo === total.tipo)
@@ -40,7 +42,7 @@ export function ImpactMetricsChart({
         const color = metricColors[total.tipo] ?? "#2F8064";
 
         return (
-          <View key={total.tipo} style={[styles.metricCard, { backgroundColor: cardColor }]}>
+          <RegeneraCard key={total.tipo} style={[styles.metricCard, { backgroundColor: cardColor }]}>
             <View style={styles.metricHeading}>
               <Text style={[styles.metricLabel, { color: textColor }]}>{total.etiqueta}</Text>
               <Text style={[styles.metricTotal, { color }]}>
@@ -74,7 +76,7 @@ export function ImpactMetricsChart({
                 Aún no hay registros individuales para graficar.
               </Text>
             )}
-          </View>
+          </RegeneraCard>
         );
       })}
     </View>
@@ -98,9 +100,8 @@ function formatDate(value: string | null): string {
 
 const styles = StyleSheet.create({
   container: { gap: 12 },
-  heading: { fontSize: 16, fontWeight: "800" },
   caption: { fontSize: 12, lineHeight: 18 },
-  metricCard: { padding: 14, gap: 8, borderRadius: 14, backgroundColor: "#F1F5F1" },
+  metricCard: { padding: 14, gap: 8, borderRadius: 14 },
   metricHeading: { gap: 3 },
   metricLabel: { fontSize: 13, fontWeight: "700" },
   metricTotal: { fontSize: 22, fontWeight: "800" },

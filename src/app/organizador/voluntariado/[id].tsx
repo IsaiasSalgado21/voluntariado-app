@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/theme";
+import { AppNavigationBar, RegeneraCard, RegeneraPageHeader, RegeneraSectionHeading } from "@/components/regenera-ui";
 import { useTheme } from "@/hooks/use-theme";
 import { useSession } from "@/features/auth/use-session";
 import {
@@ -31,6 +32,7 @@ import {
 } from "@/features/impacto/api";
 import { ImpactMetricsChart } from "@/features/impacto/impact-metrics-chart";
 import { hasVolunteerEnded } from "@/features/impacto/schedule";
+import { VolunteerCapacityCard } from "@/features/voluntariados/volunteer-capacity";
 
 type Palette = typeof Colors.light | typeof Colors.dark;
 
@@ -244,10 +246,20 @@ export default function ManagedVolunteerDashboardScreen() {
         { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 30 },
       ]}
     >
-      <Pressable onPress={goBack} style={styles.backButton}>
-        <Text style={styles.backText}>‹  Voluntariados</Text>
-      </Pressable>
-      <Text style={styles.eyebrow}>REGENERA · SEGUIMIENTO</Text>
+      <AppNavigationBar backLabel="Voluntariados" onBack={goBack} />
+      {dashboard ? (
+        <RegeneraPageHeader
+          eyebrow="REGENERA · SEGUIMIENTO"
+          title={dashboard.volunteer.titulo}
+          subtitle={`${dashboard.volunteer.estado} · ${dashboard.volunteer.lugar?.nombre ?? "Lugar no disponible"}`}
+        />
+      ) : (
+        <RegeneraPageHeader
+          eyebrow="REGENERA · SEGUIMIENTO"
+          title="Seguimiento del voluntariado"
+          subtitle="Consulta inscripciones, asistencia e impacto de la actividad."
+        />
+      )}
 
       {loading ? (
         <View style={styles.state}>
@@ -255,7 +267,7 @@ export default function ManagedVolunteerDashboardScreen() {
           <Text style={[styles.muted, { color: colors.textSecondary }]}>Cargando métricas y participantes…</Text>
         </View>
       ) : !dashboard ? (
-        <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+        <RegeneraCard style={styles.card}>
           <Text style={[styles.title, { color: colors.text }]}>No pudimos abrir esta actividad</Text>
           <Text style={[styles.muted, { color: colors.textSecondary }]}>
             {error ?? "No tienes permiso para consultar este voluntariado."}
@@ -263,28 +275,25 @@ export default function ManagedVolunteerDashboardScreen() {
           <Pressable onPress={() => setRefreshKey((key) => key + 1)} style={styles.primaryButton}>
             <Text style={styles.primaryButtonText}>Reintentar</Text>
           </Pressable>
-        </View>
+        </RegeneraCard>
       ) : (
         <>
-          <View style={[styles.hero, { backgroundColor: colors.backgroundElement }]}>
-            <Text style={[styles.title, { color: colors.text }]}>{dashboard.volunteer.titulo}</Text>
-            <Text style={[styles.muted, { color: colors.textSecondary }]}>
-              {dashboard.volunteer.estado} · {dashboard.volunteer.lugar?.nombre ?? "Lugar no disponible"}
-            </Text>
-          </View>
+          <VolunteerCapacityCard
+            cupo={dashboard.statistics.cupo}
+            inscritos={dashboard.statistics.inscritos}
+            disponibles={dashboard.statistics.disponibles}
+          />
 
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Resumen</Text>
-          <View style={styles.stats}>
-            <Stat label="Participantes" value={dashboard.statistics.inscritos} colors={colors} />
-            <Stat label="Lugares disponibles" value={dashboard.statistics.disponibles} colors={colors} />
+          <RegeneraCard style={styles.stats}>
+            <RegeneraSectionHeading eyebrow="ASISTENCIA" title="Resumen de jornada" />
             <Stat label="Asistencias" value={dashboard.statistics.asistencias} colors={colors} />
             <Stat label="Faltas" value={dashboard.statistics.faltas} colors={colors} />
             <Stat label="Porcentaje" value={`${dashboard.statistics.porcentajeAsistencia}%`} colors={colors} />
-          </View>
+          </RegeneraCard>
 
           {(user?.rol === "organizador" || user?.rol === "admin") && (
-            <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Asistencia por QR</Text>
+            <RegeneraCard style={styles.card}>
+              <RegeneraSectionHeading eyebrow="CONTROL DE ACCESO" title="Asistencia por QR" />
               <Text style={[styles.muted, { color: colors.textSecondary }]}>
                 Estado: {dashboard.volunteer.codigoAsistenciaActivo ? "Activo" : "Desactivado"}
               </Text>
@@ -332,11 +341,11 @@ export default function ManagedVolunteerDashboardScreen() {
                   </Text>
                 </Pressable>
               )}
-            </View>
+            </RegeneraCard>
           )}
 
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Impacto de la actividad</Text>
-          <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+          <RegeneraCard style={styles.card}>
+            <RegeneraSectionHeading eyebrow="HUELLA POSITIVA" title="Impacto de la actividad" />
             {impactError && <Text accessibilityRole="alert" style={styles.error}>{impactError}</Text>}
             {!impact && impactError && (
               <Pressable onPress={() => setRefreshKey((key) => key + 1)} style={styles.secondaryButton}>
@@ -432,9 +441,9 @@ export default function ManagedVolunteerDashboardScreen() {
               )
             )}
             {impactMessage && <Text style={styles.successText}>{impactMessage}</Text>}
-          </View>
+          </RegeneraCard>
 
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Participantes</Text>
+          <RegeneraSectionHeading eyebrow="COMUNIDAD" title="Participantes" />
           {dashboard.participants.some((participant) =>
             ["inscrita", "activa", "completada"].includes(participant.estadoInscripcion)
             && !participant.asistencia?.confirmada
@@ -449,11 +458,11 @@ export default function ManagedVolunteerDashboardScreen() {
             </Text>
           )}
           {dashboard.participants.length === 0 ? (
-            <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+            <RegeneraCard style={styles.card}>
               <Text style={[styles.muted, { color: colors.textSecondary }]}>
                 Aún no hay personas inscritas en esta actividad.
               </Text>
-            </View>
+            </RegeneraCard>
           ) : (
             <View style={styles.list}>
               {dashboard.participants.map((participant) => {
@@ -462,7 +471,7 @@ export default function ManagedVolunteerDashboardScreen() {
                 const correction = participant.solicitudAsistencia;
                 const correctionPending = correction?.estado === "pendiente" || correction?.estado === "aceptando";
                 return (
-                  <View key={participant.id} style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
+                  <RegeneraCard key={participant.id} style={styles.card}>
                     <View style={styles.participantIdentity}>
                       {participant.foto ? (
                         <Image
@@ -598,7 +607,7 @@ export default function ManagedVolunteerDashboardScreen() {
                         )}
                       </View>
                     )}
-                  </View>
+                  </RegeneraCard>
                 );
               })}
             </View>
@@ -643,13 +652,8 @@ function Stat({
 
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 18, gap: 13 },
-  backButton: { paddingVertical: 8 },
-  backText: { color: "#164F3D", fontSize: 15, fontWeight: "700" },
-  eyebrow: { color: "#164F3D", fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
-  hero: { padding: 18, borderRadius: 18, gap: 8 },
   title: { fontSize: 24, lineHeight: 31, fontWeight: "800" },
-  sectionTitle: { fontSize: 18, fontWeight: "800", marginTop: 4 },
-  stats: { flexDirection: "row", flexWrap: "wrap", gap: 9 },
+  stats: { flexDirection: "row", flexWrap: "wrap", gap: 9, padding: 15 },
   statCard: { flexGrow: 1, flexBasis: "45%", minWidth: 130, padding: 14, borderRadius: 15, gap: 4 },
   statValue: { fontSize: 22, fontWeight: "800" },
   statLabel: { fontSize: 11 },

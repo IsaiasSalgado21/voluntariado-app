@@ -102,6 +102,12 @@ const ADMIN_DASHBOARD: RoleDashboard = {
       action: "users",
     },
     {
+      icon: "📅",
+      title: "Gestión de voluntariados",
+      description: "Consulta, crea y administra actividades por categoría y estado.",
+      action: "manageVolunteers",
+    },
+    {
       icon: "📝",
       title: "Revisión de contenido",
       description: "Revisa actividades, artículos, lugares y registros naturales.",
