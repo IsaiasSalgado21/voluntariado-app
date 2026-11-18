@@ -57,6 +57,31 @@ test("filters by type and accent-insensitive species information", () => {
   assert.deepEqual(filterSpecies(records, "", "fauna"), [records[1]]);
 });
 
+test("accepts API location objects without a display name and empty legacy locations", () => {
+  const base = {
+    id: "desert-fox",
+    nombre: "Zorro del desierto",
+    nombreCientifico: null,
+    tipo: "fauna",
+    descripcion: null,
+    habitat: null,
+    estadoConservacion: null,
+    imagenes: [],
+    zonaAproximada: false,
+    fuenteInformacion: null,
+  };
+  const records = parseSpeciesList([
+    { ...base, ubicacion: { latitud: 24.14, longitud: -110.31 } },
+    { ...base, id: "no-location", ubicacion: [] },
+    { ...base, id: "location-omitted" },
+  ]);
+  assert.deepEqual(records.map((record) => record.ubicacionNombre), [null, null, null]);
+  assert.throws(
+    () => parseSpeciesList([{ ...base, ubicacion: { nombre: 12 } }]),
+    /formato inesperado/,
+  );
+});
+
 test("rejects malformed or unknown species records", () => {
   assert.throws(() => parseSpeciesList([{ id: "missing-fields" }]), /formato inesperado/);
   assert.throws(() => parseSpeciesList([{ ...sample[0], tipo: "insecto" }]), /formato inesperado/);

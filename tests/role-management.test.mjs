@@ -146,6 +146,11 @@ test("parses managed activities and organizer dashboard summaries", async () => 
   assert.equal(parseManagedVolunteerList({ data: [volunteer] })[0].estado, "publicado");
   assert.equal(parseManagedVolunteer(legacyVolunteer).codigoAsistenciaActivo, true);
   assert.equal(parseManagedVolunteerList({ data: [legacyVolunteer] })[0].id, "volunteer-1");
+  assert.equal(parseManagedVolunteer({ ...legacyVolunteer, categoria: null }).categoria, "");
+  const missingCategory = { ...legacyVolunteer };
+  delete missingCategory.categoria;
+  assert.equal(parseManagedVolunteer(missingCategory).categoria, "");
+  assert.throws(() => parseManagedVolunteer({ ...legacyVolunteer, categoria: 42 }), /formato esperado/);
   assert.throws(() => parseManagedVolunteerList({ data: [{ id: "bad" }] }), /formato esperado/);
 
   const mock = installFetch((request) => request.url.includes("/dashboard")

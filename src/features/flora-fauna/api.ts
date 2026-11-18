@@ -30,7 +30,9 @@ export function parseSpeciesList(data: unknown): SpeciesRecord[] {
   }
 
   return data.map((value, index) => {
-    const location = isRecord(value) ? value.ubicacion : null;
+    const rawLocation = isRecord(value) ? value.ubicacion : null;
+    const location = isRecord(rawLocation) ? rawLocation : null;
+    const emptyLocationArray = Array.isArray(rawLocation) && rawLocation.length === 0;
 
     if (
       !isRecord(value)
@@ -43,8 +45,13 @@ export function parseSpeciesList(data: unknown): SpeciesRecord[] {
       || !nullableString(value.estadoConservacion)
       || !Array.isArray(value.imagenes)
       || !value.imagenes.every((image) => typeof image === "string")
-      || (location !== null && !isRecord(location))
-      || (isRecord(location) && !nullableString(location.nombre))
+      || (rawLocation !== undefined
+        && rawLocation !== null
+        && location === null
+        && !emptyLocationArray)
+      || (location !== null
+        && location.nombre !== undefined
+        && !nullableString(location.nombre))
       || typeof value.zonaAproximada !== "boolean"
       || !nullableString(value.fuenteInformacion)
     ) {

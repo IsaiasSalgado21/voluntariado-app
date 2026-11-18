@@ -47,7 +47,9 @@ expanded only when needed.
 The Flora y fauna catalog uses the public `GET /api/flora-fauna` endpoint and
 shows published records, including the habitat, conservation status, and images
 provided by the API. Search and type filters are applied locally. Sensitive
-species locations remain generalized as returned by the API.
+species locations remain generalized as returned by the API. Location names are
+optional in the API response; a record without a named location still appears
+in the catalog and its detail view.
 
 The Artículos section is opened from Más and uses the public `GET /api/articulos`
 and `GET /api/articulos/{id}` endpoints. It displays only published articles,
@@ -99,6 +101,8 @@ Administrators can manage accounts, review activities and articles, publish or
 archive flora/fauna and places, and inspect audit entries. The API remains the
 authority for authorization, ownership, activity status, enrollment, and
 attendance time-window checks.
+Older managed activities without a category remain visible as “Sin categoría”;
+the editor still requires a valid category before saving changes.
 Organizers and admins can also open the impact log; admins have a separate
 gamification statistics screen and can inspect the answers for each recent
 attempt.

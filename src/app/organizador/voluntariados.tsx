@@ -158,7 +158,7 @@ export default function ManagedVolunteersScreen() {
                 <Text style={[styles.badge, statusStyle(item.estado)]}>{statusLabel(item.estado)}</Text>
               </View>
               <Text style={[styles.muted, { color: colors.textSecondary }]}>
-                {formatDate(item.fechaInicio)} · Cupo {item.cupo} · {item.categoria}
+                {formatDate(item.fechaInicio)} · Cupo {item.cupo} · {item.categoria || "Sin categoría"}
               </Text>
               <View style={styles.actions}>
                 <Pressable

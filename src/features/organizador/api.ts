@@ -109,6 +109,9 @@ export function parseManagedVolunteer(value: unknown): ManagedVolunteer {
     !isRecord(value)
     || typeof value.cupo !== "number"
     || typeof value.iniciadoPorFecha !== "boolean"
+    || (value.categoria !== undefined
+      && value.categoria !== null
+      && typeof value.categoria !== "string")
     || (value.codigoCorto !== undefined
       && value.codigoCorto !== null
       && typeof value.codigoCorto !== "string")
@@ -122,7 +125,7 @@ export function parseManagedVolunteer(value: unknown): ManagedVolunteer {
     id: asString(value.id, "id"),
     titulo: asString(value.titulo, "título"),
     descripcion: asString(value.descripcion, "descripción"),
-    categoria: asString(value.categoria, "categoría"),
+    categoria: typeof value.categoria === "string" ? value.categoria.trim() : "",
     lugarId: asString(value.lugarId, "lugar"),
     organizadorId: asString(value.organizadorId, "organizador"),
     fechaInicio: asString(value.fechaInicio, "fecha de inicio"),
