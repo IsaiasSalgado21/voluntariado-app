@@ -57,7 +57,9 @@ shows published records, including the habitat, conservation status, and images
 provided by the API. Search and type filters are applied locally. Sensitive
 species locations remain generalized as returned by the API. Location names are
 optional in the API response; a record without a named location still appears
-in the catalog and its detail view.
+in the catalog and its detail view. Legacy records can return
+`fuenteInformacion` as a list of citations; the app joins those citations for
+display instead of rejecting the whole catalog.
 
 The Artículos section is opened from Más and uses the public `GET /api/articulos`
 and `GET /api/articulos/{id}` endpoints. It displays only published articles,

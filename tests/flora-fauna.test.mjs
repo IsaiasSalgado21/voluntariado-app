@@ -82,8 +82,19 @@ test("accepts API location objects without a display name and empty legacy locat
   );
 });
 
+test("normalizes source citations returned as a legacy list", () => {
+  const records = parseSpeciesList([
+    { ...sample[0], fuenteInformacion: ["CONABIO", "CONANP"] },
+    { ...sample[1], fuenteInformacion: [] },
+  ]);
+
+  assert.equal(records[0].fuenteInformacion, "CONABIO\nCONANP");
+  assert.equal(records[1].fuenteInformacion, null);
+});
+
 test("rejects malformed or unknown species records", () => {
   assert.throws(() => parseSpeciesList([{ id: "missing-fields" }]), /formato inesperado/);
   assert.throws(() => parseSpeciesList([{ ...sample[0], tipo: "insecto" }]), /formato inesperado/);
+  assert.throws(() => parseSpeciesList([{ ...sample[0], fuenteInformacion: { fuente: "CONABIO" } }]), /formato inesperado/);
   assert.deepEqual(parseSpeciesList([]), []);
 });

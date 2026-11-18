@@ -24,6 +24,18 @@ function nullableString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
+function isInformationSource(value: unknown): value is string | null | string[] {
+  return value === null
+    || typeof value === "string"
+    || (Array.isArray(value) && value.every((item) => typeof item === "string"));
+}
+
+function normalizeInformationSource(value: string | null | string[]): string | null {
+  if (typeof value === "string" || value === null) return value;
+  const sources = value.map((source) => source.trim()).filter(Boolean);
+  return sources.length > 0 ? sources.join("\n") : null;
+}
+
 export function parseSpeciesList(data: unknown): SpeciesRecord[] {
   if (!Array.isArray(data)) {
     throw new Error("La respuesta de flora y fauna no contiene una lista válida.");
@@ -53,7 +65,7 @@ export function parseSpeciesList(data: unknown): SpeciesRecord[] {
         && location.nombre !== undefined
         && !nullableString(location.nombre))
       || typeof value.zonaAproximada !== "boolean"
-      || !nullableString(value.fuenteInformacion)
+      || !isInformationSource(value.fuenteInformacion)
     ) {
       throw new Error(`El registro de flora/fauna ${index + 1} tiene un formato inesperado.`);
     }
@@ -71,7 +83,7 @@ export function parseSpeciesList(data: unknown): SpeciesRecord[] {
         ? location.nombre
         : null,
       zonaAproximada: value.zonaAproximada,
-      fuenteInformacion: value.fuenteInformacion,
+      fuenteInformacion: normalizeInformationSource(value.fuenteInformacion),
     };
   });
 }
