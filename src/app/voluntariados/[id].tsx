@@ -1,4 +1,5 @@
 import { router, useLocalSearchParams } from "expo-router";
+import { Image } from "expo-image";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -36,6 +37,7 @@ import {
 } from "@/features/voluntariados/api";
 import { fetchVolunteerImpact, type VolunteerImpactSummary } from "@/features/impacto/api";
 import { ImpactMetricsChart } from "@/features/impacto/impact-metrics-chart";
+import { VolunteerSymbol, type VolunteerSymbolName } from "@/features/voluntariados/volunteer-symbol";
 
 export default function VolunteerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -69,6 +71,7 @@ export default function VolunteerDetailScreen() {
   const [impactLoading, setImpactLoading] = useState(true);
   const [impactError, setImpactError] = useState<string | null>(null);
   const [impactRefresh, setImpactRefresh] = useState(0);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   const canEnroll = Boolean(
     token
@@ -315,7 +318,21 @@ export default function VolunteerDetailScreen() {
         ? `Lleno · ${capacity.inscripciones_activas} de ${capacity.cupo}`
         : `${Math.max(0, capacity.cupo - capacity.inscripciones_activas)} lugares disponibles de ${capacity.cupo}`
       : `Cupo máximo: ${volunteer.cupo} · ocupación actual no disponible`;
-  const factColors = { textColor: colors.text, labelColor: colors.textSecondary };
+  const factColors = {
+    textColor: colors.text,
+    labelColor: colors.textSecondary,
+    iconBackground: colors.backgroundSelected,
+  };
+  const chipBackgroundColors = {
+    requirements: scheme === "dark" ? colors.backgroundSelected : "#F3F7F1",
+    materials: scheme === "dark" ? colors.backgroundSelected : "#FAF6ED",
+  };
+  const galleryImages = Array.from(
+    new Set([volunteer.imagen, ...volunteer.imagenes].filter((image): image is string => Boolean(image))),
+  );
+  const heroImage = galleryImages.includes(selectedImage ?? "")
+    ? selectedImage
+    : galleryImages[0] ?? null;
 
   return (
     <ScrollView
@@ -334,23 +351,85 @@ export default function VolunteerDetailScreen() {
         <Text style={styles.backText}>‹  Voluntariados</Text>
       </Pressable>
 
-      <VolunteerPhoto
-        uri={volunteer.imagen ?? volunteer.imagenes[0] ?? null}
-        title={volunteer.titulo}
-        variant="detail"
-      />
-
-      <View style={[styles.hero, { backgroundColor: colors.backgroundElement }]}>
-        <Text style={styles.eyebrow}>REGENERA · PARTICIPA</Text>
-        <Text style={[styles.title, { color: colors.text }]}>{volunteer.titulo}</Text>
-        {volunteer.categoria && (
-          <Text style={styles.category}>{formatCategory(volunteer.categoria)}</Text>
-        )}
+      <View style={styles.hero}>
+        <VolunteerPhoto
+          key={`${volunteer.id}-${heroImage ?? "placeholder"}`}
+          uri={heroImage}
+          title={volunteer.titulo}
+          variant="detail"
+        />
+        <View style={styles.heroOverlay}>
+          {volunteer.categoria && (
+            <Text style={styles.category}>{formatCategory(volunteer.categoria)}</Text>
+          )}
+          <Text style={styles.heroEyebrow}>PARTICIPA</Text>
+          <Text style={styles.heroTitle}>{volunteer.titulo}</Text>
+          <View style={styles.heroMeta}>
+            <HeroFact
+              icon="calendario"
+              label="Fecha"
+              value={`${formatDate(volunteer.fechaInicio)}${volunteer.horaInicio ? ` · ${volunteer.horaInicio.slice(0, 5)}` : ""}`}
+            />
+            {(place?.nombre || placeLoading) && (
+              <HeroFact
+                icon="ubicacion"
+                label="Lugar"
+                value={`${place?.nombre ?? "Cargando lugar…"}${place?.municipio ? ` · ${place.municipio}` : ""}`}
+              />
+            )}
+          </View>
+          <View style={styles.organizer}>
+            {volunteer.organizadorFoto ? (
+              <Image
+                accessibilityLabel={`Foto de ${volunteer.organizadorNombre ?? "el organizador"}`}
+                source={{ uri: volunteer.organizadorFoto }}
+                contentFit="cover"
+                style={styles.organizerAvatar}
+              />
+            ) : (
+              <View style={[styles.organizerAvatar, styles.organizerAvatarFallback]}>
+                <Text style={styles.organizerInitial}>
+                  {(volunteer.organizadorNombre ?? "O").charAt(0).toLocaleUpperCase("es-MX")}
+                </Text>
+              </View>
+            )}
+            <Text style={styles.organizerName}>
+              Organiza: {volunteer.organizadorNombre ?? "Organizador"}
+            </Text>
+          </View>
+        </View>
       </View>
+      {galleryImages.length > 1 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.gallery}
+          accessibilityLabel="Imágenes del voluntariado"
+        >
+          {galleryImages.map((image, index) => {
+            const active = image === heroImage;
+            return (
+              <Pressable
+                key={`${image}-${index}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Mostrar imagen ${index + 1} de ${galleryImages.length}`}
+                accessibilityState={{ selected: active }}
+                onPress={() => setSelectedImage(image)}
+                style={[styles.galleryThumbnail, active && styles.galleryThumbnailActive]}
+              >
+                <Image source={{ uri: image }} contentFit="cover" style={styles.galleryImage} />
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
 
       <View style={styles.content}>
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Tu participación</Text>
+          <Text style={styles.cardKicker}>ÚNETE A LA ACCIÓN</Text>
+          <Text style={[styles.sectionTitle, styles.joinTitle, { color: colors.text }]}>
+            Tu participación importa.
+          </Text>
           {sessionStatus === "loading" ? (
             <ActivityIndicator color="#164F3D" />
           ) : !token ? (
@@ -501,6 +580,11 @@ export default function VolunteerDetailScreen() {
           )}
         </View>
 
+        <View style={styles.sectionIntro}>
+          <Text style={styles.sectionEyebrow}>UNA ACCIÓN QUE SUMA</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Detalles de la actividad</Text>
+        </View>
+
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Sobre la actividad</Text>
           <Text style={[styles.description, { color: colors.textSecondary }]}>
@@ -510,23 +594,26 @@ export default function VolunteerDetailScreen() {
 
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Información</Text>
-          <Fact {...factColors} label="Fecha de inicio" value={formatDate(volunteer.fechaInicio)} />
-          <Fact {...factColors} label="Fecha de término" value={formatDate(volunteer.fechaFin)} />
-          <Fact {...factColors} label="Horario" value={formatTimeRange(volunteer.horaInicio, volunteer.horaFin)} />
+          <Fact {...factColors} icon="calendario" label="Fecha de inicio" value={formatDate(volunteer.fechaInicio)} />
+          <Fact {...factColors} icon="calendario" label="Fecha de término" value={formatDate(volunteer.fechaFin)} />
+          <Fact {...factColors} icon="reloj" label="Horario" value={formatTimeRange(volunteer.horaInicio, volunteer.horaFin)} />
           <Fact
             {...factColors}
+            icon="ubicacion"
             label="Lugar"
             value={place?.nombre ?? (placeLoading ? "Cargando lugar…" : "Lugar registrado")}
           />
-          {place?.municipio && <Fact {...factColors} label="Municipio" value={place.municipio} />}
+          {place?.municipio && <Fact {...factColors} icon="ubicacion" label="Municipio" value={place.municipio} />}
           <Fact
             {...factColors}
+            icon="voluntariado"
             label="Organizador"
             value={volunteer.organizadorNombre ?? "Organizador no disponible"}
           />
-          <Fact {...factColors} label="Cupo" value={capacityLabel} />
+          <Fact {...factColors} icon="participantes" label="Cupo" value={capacityLabel} />
           <Fact
             {...factColors}
+            icon={volunteer.estado === "pendiente" ? "pendiente" : volunteer.estado === "cancelado" ? "cancelado" : "voluntariado"}
             label="Estado"
             value={formatVolunteerStatus(volunteer.estado, volunteer.finalizadoPorFecha)}
           />
@@ -543,18 +630,22 @@ export default function VolunteerDetailScreen() {
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Requisitos</Text>
           <FactList
+            kind="requirements"
             items={volunteer.requisitos}
             emptyText="No se especificaron requisitos."
             textColor={colors.textSecondary}
+            chipBackgroundColor={chipBackgroundColors.requirements}
           />
         </View>
 
         <View style={[styles.card, { backgroundColor: colors.backgroundElement }]}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>Materiales necesarios</Text>
           <FactList
+            kind="materials"
             items={volunteer.materiales}
             emptyText="No se especificaron materiales."
             textColor={colors.textSecondary}
+            chipBackgroundColor={chipBackgroundColors.materials}
           />
         </View>
 
@@ -658,20 +749,49 @@ export default function VolunteerDetailScreen() {
 }
 
 function Fact({
+  icon,
   label,
   value,
   textColor,
   labelColor,
+  iconBackground,
 }: {
+  icon: VolunteerSymbolName;
   label: string;
   value: string;
   textColor: string;
   labelColor: string;
+  iconBackground: string;
 }) {
   return (
     <View style={styles.fact}>
-      <Text style={[styles.factLabel, { color: labelColor }]}>{label}</Text>
-      <Text style={[styles.factValue, { color: textColor }]}>{value}</Text>
+      <View style={[styles.factIcon, { backgroundColor: iconBackground }]}>
+        <VolunteerSymbol name={icon} size={22} />
+      </View>
+      <View style={styles.factCopy}>
+        <Text style={[styles.factLabel, { color: labelColor }]}>{label}</Text>
+        <Text style={[styles.factValue, { color: textColor }]}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+function HeroFact({
+  icon,
+  label,
+  value,
+}: {
+  icon: VolunteerSymbolName;
+  label: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.heroFact}>
+      <VolunteerSymbol name={icon} size={20} />
+      <View style={styles.heroFactCopy}>
+        <Text style={styles.heroFactLabel}>{label}</Text>
+        <Text numberOfLines={2} style={styles.heroFactValue}>{value}</Text>
+      </View>
     </View>
   );
 }
@@ -680,10 +800,14 @@ function FactList({
   items,
   emptyText,
   textColor,
+  kind,
+  chipBackgroundColor,
 }: {
   items: string[];
   emptyText: string;
   textColor: string;
+  kind: "requirements" | "materials";
+  chipBackgroundColor: string;
 }) {
   if (!items.length) {
     return <Text style={[styles.description, { color: textColor }]}>{emptyText}</Text>;
@@ -691,13 +815,34 @@ function FactList({
 
   return (
     <View style={styles.factList}>
-      {items.map((item, index) => (
-        <Text key={`${index}-${item}`} style={[styles.description, { color: textColor }]}>
-          • {item}
-        </Text>
-      ))}
+      {items.map((item, index) => {
+        const icon = kind === "requirements" ? "confirmado" : materialSymbol(item) ?? "mochila";
+        return (
+          <View
+            key={`${index}-${item}`}
+            style={[
+              styles.factChip,
+              { backgroundColor: chipBackgroundColor },
+            ]}
+          >
+            <VolunteerSymbol name={icon} size={18} />
+            <Text style={[styles.factChipText, { color: textColor }]}>{item}</Text>
+          </View>
+        );
+      })}
     </View>
   );
+}
+
+function materialSymbol(material: string): VolunteerSymbolName | null {
+  const normalized = material.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es-MX");
+  if (/\bguantes?\b/.test(normalized)) return "guantes";
+  if (/\b(?:bloqueador(?:es)?|protector(?:es)? solar(?:es)?|proteccion solar)\b/.test(normalized)) return "bloqueador-solar";
+  if (/\bagua\b/.test(normalized)) return "agua";
+  if (/\b(?:gorras?|sombreros?)\b/.test(normalized)) return "gorra";
+  if (/\bbolsas?\b/.test(normalized)) return "bolsa-residuos";
+  if (/\b(?:calzado|zapatos?|tenis)\b/.test(normalized)) return "calzado";
+  return null;
 }
 
 function formatDate(value: string | null): string {
@@ -759,20 +904,45 @@ const styles = StyleSheet.create({
   errorState: { alignItems: "stretch" },
   backButton: { paddingHorizontal: 20, paddingVertical: 12 },
   backText: { color: "#164F3D", fontSize: 16, fontWeight: "700" },
-  hero: { paddingHorizontal: 22, paddingVertical: 26, gap: 10 },
+  hero: { position: "relative", backgroundColor: "#244B3B" },
+  heroOverlay: { position: "absolute", right: 0, bottom: 0, left: 0, gap: 8, paddingHorizontal: 20, paddingVertical: 18, backgroundColor: "rgba(8, 28, 20, 0.82)" },
+  heroEyebrow: { color: "#D3DED7", fontSize: 11, fontWeight: "800", letterSpacing: 1.4 },
+  heroTitle: { color: "#FFFFFF", fontSize: 27, fontWeight: "800", lineHeight: 34 },
+  heroMeta: { flexDirection: "row", flexWrap: "wrap", gap: 12, marginTop: 4 },
+  heroFact: { flexDirection: "row", alignItems: "center", gap: 8, flexGrow: 1, flexBasis: "45%" },
+  heroFactCopy: { flex: 1, gap: 2 },
+  heroFactLabel: { color: "#C8D8CE", fontSize: 10, fontWeight: "700", textTransform: "uppercase" },
+  heroFactValue: { color: "#FFFFFF", fontSize: 12, fontWeight: "700", lineHeight: 17 },
+  organizer: { flexDirection: "row", alignItems: "center", gap: 9, marginTop: 4 },
+  organizerAvatar: { width: 32, height: 32, borderRadius: 16, backgroundColor: "#DCE8DF" },
+  organizerAvatarFallback: { alignItems: "center", justifyContent: "center" },
+  organizerInitial: { color: "#164F3D", fontSize: 14, fontWeight: "800" },
+  organizerName: { flex: 1, color: "#D3DED7", fontSize: 12, fontWeight: "600" },
+  gallery: { gap: 9, paddingHorizontal: 18, paddingTop: 10 },
+  galleryThumbnail: { width: 62, height: 48, overflow: "hidden", borderWidth: 2, borderColor: "transparent", borderRadius: 10, opacity: 0.75 },
+  galleryThumbnailActive: { borderColor: "#2F8064", opacity: 1 },
+  galleryImage: { width: "100%", height: "100%" },
   eyebrow: { color: "#164F3D", fontSize: 11, fontWeight: "700", letterSpacing: 0.8 },
   title: { fontSize: 27, fontWeight: "800", lineHeight: 34 },
-  category: { alignSelf: "flex-start", color: "#164F3D", backgroundColor: "#DCE8DF", borderRadius: 14, paddingHorizontal: 11, paddingVertical: 6, fontSize: 12, fontWeight: "700", overflow: "hidden" },
+  category: { alignSelf: "flex-start", borderWidth: 1, borderColor: "rgba(255,255,255,0.45)", borderRadius: 999, paddingHorizontal: 11, paddingVertical: 5, backgroundColor: "rgba(15,50,39,0.7)", color: "#FFFFFF", fontSize: 11, fontWeight: "700", letterSpacing: 0.5, overflow: "hidden" },
   content: { padding: 18, gap: 14 },
   card: { padding: 18, borderRadius: 18, gap: 13 },
-  factList: { gap: 6 },
+  cardKicker: { color: "#2F8064", fontSize: 10, fontWeight: "800", letterSpacing: 1.4 },
+  joinTitle: { marginTop: -7, fontSize: 22, lineHeight: 29 },
+  sectionIntro: { gap: 6, paddingTop: 6, paddingBottom: 2 },
+  sectionEyebrow: { color: "#2F8064", fontSize: 10, fontWeight: "800", letterSpacing: 1.4 },
+  factList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  factChip: { flexDirection: "row", alignItems: "center", gap: 7, maxWidth: "100%", borderWidth: 1, borderColor: "#DFE9DF", borderRadius: 999, paddingHorizontal: 11, paddingVertical: 8 },
+  factChipText: { flexShrink: 1, fontSize: 13, lineHeight: 18 },
   impactRecords: { gap: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "#B7C7BE", paddingTop: 10 },
   impactLabel: { fontSize: 14, fontWeight: "700" },
   impactRecord: { gap: 3 },
   impactRecordText: { fontSize: 12, lineHeight: 18 },
   sectionTitle: { fontSize: 18, fontWeight: "800" },
   description: { fontSize: 15, lineHeight: 23 },
-  fact: { gap: 3 },
+  fact: { flexDirection: "row", alignItems: "flex-start", gap: 11 },
+  factIcon: { width: 38, height: 38, flexShrink: 0, alignItems: "center", justifyContent: "center", borderRadius: 12, backgroundColor: "#EDF4EE" },
+  factCopy: { flex: 1, gap: 3, paddingTop: 2 },
   factLabel: { fontSize: 12, fontWeight: "600" },
   factValue: { color: "#20332B", fontSize: 15, fontWeight: "700" },
   map: { height: 220, borderRadius: 14 },

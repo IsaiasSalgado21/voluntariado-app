@@ -36,7 +36,7 @@ export function VolunteerPhoto({
 
 const styles = StyleSheet.create({
   cardImage: { width: "100%", height: 170, borderRadius: 13, backgroundColor: "#E8ECE7" },
-  detailImage: { width: "100%", height: 230, backgroundColor: "#E8ECE7" },
+  detailImage: { width: "100%", height: 320, backgroundColor: "#E8ECE7" },
   placeholder: { alignItems: "center", justifyContent: "center" },
   placeholderText: { color: "#61746A", fontSize: 13, fontWeight: "600" },
 });
