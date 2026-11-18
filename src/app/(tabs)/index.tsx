@@ -1,5 +1,6 @@
 import * as Location from "expo-location";
-import { useEffect, useState } from "react";
+import { router } from "expo-router";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -12,10 +13,31 @@ import {
   useColorScheme,
   View,
 } from "react-native";
-import MapView, { Callout, Marker, type Region } from "@/features/map/map-view";
+import MapView, { Circle, Marker, type Region } from "@/features/map/map-view";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/theme";
-import { fetchPlaces, type PlaceOption } from "@/features/voluntariados/api";
+import { fetchSpeciesMapPoints, type SpeciesMapPoint } from "@/features/map/api";
+import {
+  getMapMarkerPresentation,
+  MAP_LEGEND,
+  type MapFeatureKind,
+  type MapMarkerKind,
+} from "@/features/map/presentation";
+import { resolveApiAssetUrl } from "@/features/api-client";
+import {
+  fetchPlaces,
+  fetchVoluntariados,
+  type PlaceOption,
+  type VolunteerMapItem,
+} from "@/features/voluntariados/api";
+
+type MapLayer = "voluntariados" | "lugares" | "flora-fauna";
+type MapFeature =
+  | { layer: "voluntariados"; data: VolunteerMapItem }
+  | { layer: "lugares"; data: PlaceOption }
+  | { layer: "flora-fauna"; data: SpeciesMapPoint };
+type LayerStatus = { loading: boolean; error: string | null };
+type LayerStatusMap = Record<MapLayer, LayerStatus>;
 
 const LA_PAZ_REGION: Region = {
   latitude: 24.22,
@@ -23,6 +45,123 @@ const LA_PAZ_REGION: Region = {
   latitudeDelta: 0.4,
   longitudeDelta: 0.2,
 };
+
+const LAYER_LABELS: Record<MapLayer, string> = {
+  voluntariados: "Voluntariados",
+  lugares: "Lugares",
+  "flora-fauna": "Flora y fauna",
+};
+
+function featureCoordinates(feature: MapFeature) {
+  return { latitude: feature.data.lat, longitude: feature.data.lng };
+}
+
+function featureTitle(feature: MapFeature): string {
+  return feature.layer === "voluntariados" ? feature.data.titulo : feature.data.nombre;
+}
+
+function featureKind(feature: MapFeature): MapFeatureKind {
+  if (feature.layer === "voluntariados") return "voluntariado";
+  if (feature.layer === "lugares") return "lugar";
+  return feature.data.tipo;
+}
+
+function featureMarkerKind(feature: MapFeature): MapMarkerKind {
+  return feature.layer === "voluntariados" && feature.data.lleno ? "lleno" : featureKind(feature);
+}
+
+function featureDescription(feature: MapFeature): string | null {
+  return feature.data.descripcion;
+}
+
+function featureImage(feature: MapFeature): string | null {
+  if (feature.layer === "voluntariados") return feature.data.imagen;
+  if (feature.layer === "lugares") return resolveApiAssetUrl(feature.data.imagen);
+  return null;
+}
+
+function featureDetails(feature: MapFeature): string[] {
+  if (feature.layer === "voluntariados") {
+    const remaining = Math.max(0, feature.data.cupo - feature.data.inscripciones_activas);
+    return [
+      feature.data.categoria ? formatPlaceType(feature.data.categoria) : "Sin categoría",
+      feature.data.fecha_inicio,
+      feature.data.lugar_nombre,
+      feature.data.lleno ? "Cupo lleno" : `${remaining} lugares disponibles`,
+    ].filter((value): value is string => Boolean(value));
+  }
+
+  if (feature.layer === "lugares") {
+    return [
+      feature.data.tipo ? formatPlaceType(feature.data.tipo) : null,
+      feature.data.municipio,
+    ].filter((value): value is string => Boolean(value));
+  }
+
+  return [
+    feature.data.nombreCientifico,
+    feature.data.estadoConservacion
+      ? `Conservación: ${formatPlaceType(feature.data.estadoConservacion)}`
+      : null,
+    feature.data.zonaAproximada
+      ? `Ubicación aproximada${feature.data.radioMetros ? ` · radio ${feature.data.radioMetros} m` : ""}`
+      : null,
+  ].filter((value): value is string => Boolean(value));
+}
+
+function regionForFeatures(features: MapFeature[]): Region | null {
+  if (features.length === 0) return null;
+
+  let minLatitude = Number.POSITIVE_INFINITY;
+  let maxLatitude = Number.NEGATIVE_INFINITY;
+  let minLongitude = Number.POSITIVE_INFINITY;
+  let maxLongitude = Number.NEGATIVE_INFINITY;
+  for (const feature of features) {
+    minLatitude = Math.min(minLatitude, feature.data.lat);
+    maxLatitude = Math.max(maxLatitude, feature.data.lat);
+    minLongitude = Math.min(minLongitude, feature.data.lng);
+    maxLongitude = Math.max(maxLongitude, feature.data.lng);
+  }
+
+  return {
+    latitude: (minLatitude + maxLatitude) / 2,
+    longitude: (minLongitude + maxLongitude) / 2,
+    latitudeDelta: Math.min(180, Math.max(0.1, (maxLatitude - minLatitude) * 1.4)),
+    longitudeDelta: Math.min(360, Math.max(0.1, (maxLongitude - minLongitude) * 1.4)),
+  };
+}
+
+function fallbackMarkerLabel(kind: MapMarkerKind): string {
+  if (kind === "voluntariado") return "V";
+  if (kind === "lleno") return "!";
+  if (kind === "lugar") return "L";
+  return kind === "flora" ? "F" : "Fa";
+}
+
+function MapMarkerIcon({ kind }: { kind: MapMarkerKind }) {
+  const presentation = getMapMarkerPresentation(
+    kind === "lleno" ? "voluntariado" : kind,
+    kind === "lleno",
+  );
+  const [imageFailed, setImageFailed] = useState(false);
+  const uri = resolveApiAssetUrl(`/img/simbolos/${presentation.symbol}.png`);
+
+  return (
+    <View style={[styles.markerIcon, { backgroundColor: presentation.color }]}>
+      {uri && !imageFailed ? (
+        <Image
+          accessibilityLabel={presentation.label}
+          onError={() => setImageFailed(true)}
+          resizeMode="contain"
+          source={{ uri }}
+          style={styles.markerImage}
+        />
+      ) : (
+        <Text style={styles.markerFallback}>{fallbackMarkerLabel(kind)}</Text>
+      )}
+    </View>
+  );
+}
 
 export default function MapTabScreen() {
   const insets = useSafeAreaInsets();
@@ -34,31 +173,89 @@ export default function MapTabScreen() {
   const [canAskAgain, setCanAskAgain] = useState(true);
   const [isLocationLoading, setIsLocationLoading] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [volunteers, setVolunteers] = useState<VolunteerMapItem[]>([]);
   const [places, setPlaces] = useState<PlaceOption[]>([]);
-  const [placesLoading, setPlacesLoading] = useState(true);
-  const [placesError, setPlacesError] = useState<string | null>(null);
-  const [placesRefreshKey, setPlacesRefreshKey] = useState(0);
-  const [selectedPlace, setSelectedPlace] = useState<PlaceOption | null>(null);
+  const [species, setSpecies] = useState<SpeciesMapPoint[]>([]);
+  const [layerStatus, setLayerStatus] = useState<LayerStatusMap>({
+    voluntariados: { loading: true, error: null },
+    lugares: { loading: true, error: null },
+    "flora-fauna": { loading: true, error: null },
+  });
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [visibleLayers, setVisibleLayers] = useState<Record<MapLayer, boolean>>({
+    voluntariados: true,
+    lugares: true,
+    "flora-fauna": true,
+  });
+  const [selectedFeature, setSelectedFeature] = useState<MapFeature | null>(null);
+  const didFitInitialResults = useRef(false);
   const colors = Colors[scheme];
+
+  const mapFeatures = useMemo<MapFeature[]>(() => [
+    ...volunteers.map((data): MapFeature => ({ layer: "voluntariados", data })),
+    ...places.map((data): MapFeature => ({ layer: "lugares", data })),
+    ...species.map((data): MapFeature => ({ layer: "flora-fauna", data })),
+  ], [places, species, volunteers]);
+  const allLayersLoaded = Object.values(layerStatus).every((status) => !status.loading);
+  const layerErrors = Object.entries(layerStatus)
+    .filter(([, status]) => status.error)
+    .map(([layer, status]) => `${LAYER_LABELS[layer as MapLayer]}: ${status.error}`);
 
   useEffect(() => {
     const controller = new AbortController();
-    setPlacesLoading(true);
-    setPlacesError(null);
-
-    fetchPlaces(controller.signal)
-      .then(setPlaces)
-      .catch((cause: unknown) => {
+    const loadLayer = async <T,>(
+      layer: MapLayer,
+      load: (signal: AbortSignal) => Promise<T[]>,
+      onLoaded: (items: T[]) => void,
+    ) => {
+      setLayerStatus((current) => ({ ...current, [layer]: { loading: true, error: null } }));
+      try {
+        onLoaded(await load(controller.signal));
+      } catch (cause) {
         if (!controller.signal.aborted) {
-          setPlacesError(cause instanceof Error ? cause.message : "No se pudieron cargar los lugares.");
+          setLayerStatus((current) => ({
+            ...current,
+            [layer]: {
+              loading: false,
+              error: cause instanceof Error ? cause.message : "No se pudo cargar esta capa.",
+            },
+          }));
         }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setPlacesLoading(false);
-      });
+      } finally {
+        if (!controller.signal.aborted) {
+          setLayerStatus((current) => ({
+            ...current,
+            [layer]: { ...current[layer], loading: false },
+          }));
+        }
+      }
+    };
+
+    void Promise.all([
+      loadLayer("voluntariados", (signal) => fetchVoluntariados({}, signal), setVolunteers),
+      loadLayer("lugares", fetchPlaces, setPlaces),
+      loadLayer("flora-fauna", fetchSpeciesMapPoints, setSpecies),
+    ]);
 
     return () => controller.abort();
-  }, [placesRefreshKey]);
+  }, [refreshKey]);
+
+  useEffect(() => {
+    if (
+      !permissionChecked
+      || hasLocationPermission
+      || !allLayersLoaded
+      || didFitInitialResults.current
+    ) {
+      return;
+    }
+
+    const initialRegion = regionForFeatures(mapFeatures);
+    if (initialRegion) {
+      setRegion(initialRegion);
+      didFitInitialResults.current = true;
+    }
+  }, [allLayersLoaded, hasLocationPermission, mapFeatures, permissionChecked]);
 
   useEffect(() => {
     let isMounted = true;
@@ -139,6 +336,24 @@ export default function MapTabScreen() {
     }
   };
 
+  const toggleLayer = (layer: MapLayer) => {
+    setVisibleLayers((current) => ({ ...current, [layer]: !current[layer] }));
+    if (selectedFeature?.layer === layer) setSelectedFeature(null);
+  };
+
+  const showAllResults = () => {
+    const resultsRegion = regionForFeatures(mapFeatures);
+    if (resultsRegion) setRegion(resultsRegion);
+  };
+
+  const openFeatureDetail = (feature: MapFeature) => {
+    if (feature.layer === "voluntariados") {
+      router.push(`/voluntariados/${feature.data.id}`);
+    } else if (feature.layer === "flora-fauna") {
+      router.push({ pathname: "/flora-fauna/[id]", params: { id: feature.data.id } });
+    }
+  };
+
   const mapContent = (
     <MapView
       style={styles.map}
@@ -148,23 +363,33 @@ export default function MapTabScreen() {
       showsMyLocationButton={false}
       userInterfaceStyle={scheme}
     >
-      {places.map((place) => (
-        <Marker
-          key={place.id}
-          coordinate={{ latitude: place.lat, longitude: place.lng }}
-          pinColor={place.tipo === "parque" ? "#286447" : "#167D8D"}
-          onPress={() => setSelectedPlace(place)}
-        >
-          <Callout>
-            <View style={styles.callout}>
-              <Text style={styles.calloutTitle}>{place.nombre}</Text>
-              {place.tipo && <Text style={styles.calloutSubtitle}>{formatPlaceType(place.tipo)}</Text>}
-              {place.municipio && <Text style={styles.calloutSubtitle}>{place.municipio}</Text>}
-              {place.descripcion && <Text>{place.descripcion}</Text>}
-            </View>
-          </Callout>
-        </Marker>
-      ))}
+      {mapFeatures.filter((feature) => visibleLayers[feature.layer]).map((feature) => {
+        const coordinate = featureCoordinates(feature);
+        const markerKind = featureMarkerKind(feature);
+
+        return (
+          <Fragment key={`${feature.layer}:${feature.data.id}`}>
+            {feature.layer === "flora-fauna"
+              && feature.data.zonaAproximada
+              && feature.data.radioMetros
+              && feature.data.radioMetros > 0 && (
+                <Circle
+                  center={coordinate}
+                  fillColor="rgba(163, 64, 53, 0.18)"
+                  radius={feature.data.radioMetros}
+                  strokeColor="#A34035"
+                  strokeWidth={2}
+                />
+              )}
+            <Marker
+              coordinate={coordinate}
+              onPress={() => setSelectedFeature(feature)}
+            >
+              <MapMarkerIcon kind={markerKind} />
+            </Marker>
+          </Fragment>
+        );
+      })}
     </MapView>
   );
 
@@ -174,24 +399,58 @@ export default function MapTabScreen() {
         <ScrollView contentContainerStyle={styles.webFallback}>
           <Text style={[styles.title, { color: colors.text }]}>Mapa de Regenera</Text>
           <Text style={[styles.body, { color: colors.textSecondary }]}>
-            Vista de prueba web: abre cada lugar en OpenStreetMap. El mapa interactivo está disponible en iPhone y Android.
+            Vista de prueba web: abre cada registro en OpenStreetMap. El mapa interactivo está disponible en iPhone y Android.
           </Text>
-          {places.map((place) => (
-            <Pressable
-              key={place.id}
-              accessibilityRole="link"
-              onPress={() => Linking.openURL(openStreetMapUrl(place.lat, place.lng))}
-              style={[styles.webPlace, { backgroundColor: colors.backgroundElement }]}
-            >
-              <Text style={[styles.placeTitle, { color: colors.text }]}>{place.nombre}</Text>
-              {!!place.municipio && (
-                <Text style={[styles.placeSubtitle, { color: colors.textSecondary }]}>{place.municipio}</Text>
-              )}
-              <Text style={styles.webMapLinkText}>Abrir en OpenStreetMap →</Text>
-            </Pressable>
-          ))}
-          {!placesLoading && !placesError && places.length === 0 && (
-            <Text style={[styles.body, { color: colors.textSecondary }]}>No hay lugares disponibles para mostrar.</Text>
+          {(["voluntariados", "lugares", "flora-fauna"] as MapLayer[]).map((layer) => {
+            const features = mapFeatures.filter((feature) => feature.layer === layer);
+            if (!visibleLayers[layer]) return null;
+
+            return (
+              <View key={layer} style={styles.webLayer}>
+                <Text style={[styles.webLayerTitle, { color: colors.text }]}>{LAYER_LABELS[layer]}</Text>
+                {features.map((feature) => {
+                  const presentation = getMapMarkerPresentation(
+                    featureKind(feature),
+                    feature.layer === "voluntariados" && feature.data.lleno,
+                  );
+                  return (
+                    <View key={`${feature.layer}:${feature.data.id}`} style={[styles.webPlace, { backgroundColor: colors.backgroundElement }]}>
+                      <View style={styles.webFeatureHeader}>
+                        <Text style={[styles.webFeatureSymbol, { color: presentation.color }]}>●</Text>
+                        <Text style={[styles.placeTitle, { color: colors.text }]}>{featureTitle(feature)}</Text>
+                      </View>
+                      {featureDetails(feature).map((line) => (
+                        <Text key={line} style={[styles.placeSubtitle, { color: colors.textSecondary }]}>{line}</Text>
+                      ))}
+                      {featureDescription(feature) && (
+                        <Text style={[styles.placeSubtitle, { color: colors.textSecondary }]} numberOfLines={3}>
+                          {featureDescription(feature)}
+                        </Text>
+                      )}
+                      <Pressable
+                        accessibilityRole="link"
+                        onPress={() => {
+                          const { latitude, longitude } = featureCoordinates(feature);
+                          void Linking.openURL(openStreetMapUrl(latitude, longitude));
+                        }}
+                      >
+                        <Text style={styles.webMapLinkText}>Abrir en OpenStreetMap →</Text>
+                      </Pressable>
+                      {feature.layer !== "lugares" && (
+                        <Pressable accessibilityRole="button" onPress={() => openFeatureDetail(feature)}>
+                          <Text style={styles.webMapLinkText}>
+                            {feature.layer === "voluntariados" ? "Ver voluntariado →" : "Ver especie →"}
+                          </Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
+            );
+          })}
+          {allLayersLoaded && mapFeatures.length === 0 && layerErrors.length === 0 && (
+            <Text style={[styles.body, { color: colors.textSecondary }]}>No hay registros con ubicación para mostrar.</Text>
           )}
         </ScrollView>
       ) : (
@@ -201,55 +460,102 @@ export default function MapTabScreen() {
       <View
         style={[
           styles.header,
-          {
-            top: insets.top + 12,
-            backgroundColor: colors.backgroundElement,
-          },
+          { top: insets.top + 12, backgroundColor: colors.backgroundElement },
         ]}
       >
         <Text style={styles.eyebrow}>REGENERA · BAJA CALIFORNIA SUR</Text>
         <Text style={[styles.title, { color: colors.text }]}>Explora el mapa</Text>
         <Text style={[styles.body, { color: colors.textSecondary }]}>
-          Espacios y lugares registrados en Baja California Sur
+          Voluntariados, lugares y flora/fauna registrados en BCS
         </Text>
       </View>
 
-      <View
-        style={[
-          styles.dataNotice,
-          {
-            top: insets.top + 134,
-            backgroundColor: colors.backgroundElement,
-          },
-        ]}
-      >
-        {placesLoading ? (
-          <>
-            <ActivityIndicator size="small" color="#164F3D" />
-            <Text style={[styles.demoText, { color: colors.textSecondary }]}>Cargando lugares…</Text>
-          </>
-        ) : placesError ? (
-          <>
-            <Text style={styles.errorDot}>●</Text>
-            <Text style={[styles.demoText, styles.noticeError]}>{placesError}</Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setPlacesRefreshKey((key) => key + 1)}
-            >
-              <Text style={styles.retryText}>Reintentar</Text>
-            </Pressable>
-          </>
-        ) : (
-          <>
-            <Text style={styles.demoDot}>●</Text>
+      <View style={[styles.dataNotice, { top: insets.top + 134, backgroundColor: colors.backgroundElement }]}>
+        <ScrollView
+          horizontal
+          contentContainerStyle={styles.layerControls}
+          showsHorizontalScrollIndicator={false}
+        >
+          {(["voluntariados", "lugares", "flora-fauna"] as MapLayer[]).map((layer) => {
+            const count = layer === "voluntariados"
+              ? volunteers.length
+              : layer === "lugares"
+                ? places.length
+                : species.length;
+            const selected = visibleLayers[layer];
+            const loading = layerStatus[layer].loading;
+            return (
+              <Pressable
+                key={layer}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: selected }}
+                onPress={() => toggleLayer(layer)}
+                style={[
+                  styles.layerButton,
+                  { backgroundColor: selected ? "#164F3D" : colors.background },
+                ]}
+              >
+                {loading ? (
+                  <ActivityIndicator size="small" color={selected ? "#FFFFFF" : "#164F3D"} />
+                ) : (
+                  <Text style={[styles.layerCount, { color: selected ? "#FFFFFF" : colors.text }]}>
+                    {count}
+                  </Text>
+                )}
+                <Text style={[styles.layerLabel, { color: selected ? "#FFFFFF" : colors.text }]}>
+                  {LAYER_LABELS[layer]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        <View style={styles.layerActions}>
+          {!!layerErrors.length && (
+            <>
+              <Text numberOfLines={2} style={[styles.noticeError, { flex: 1 }]}>
+                {layerErrors[0]}
+              </Text>
+              <Pressable accessibilityRole="button" onPress={() => setRefreshKey((key) => key + 1)}>
+                <Text style={styles.retryText}>Reintentar</Text>
+              </Pressable>
+            </>
+          )}
+          {!layerErrors.length && allLayersLoaded && mapFeatures.length === 0 && (
             <Text style={[styles.demoText, { color: colors.textSecondary }]}>
-              {places.length} {places.length === 1 ? "lugar público" : "lugares públicos"}
+              No hay registros con ubicación disponibles.
             </Text>
-          </>
-        )}
+          )}
+          {mapFeatures.length > 0 && (
+            <Pressable accessibilityRole="button" onPress={showAllResults}>
+              <Text style={styles.retryText}>Ver todos</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
-      {selectedPlace && (
+      <ScrollView
+        horizontal
+        style={[styles.legend, { top: insets.top + 221, backgroundColor: colors.backgroundElement }]}
+        contentContainerStyle={styles.legendContent}
+        showsHorizontalScrollIndicator={false}
+      >
+        {MAP_LEGEND.map(({ kind, label }) => {
+          const presentation = getMapMarkerPresentation(kind === "lleno" ? "voluntariado" : kind, kind === "lleno");
+          const uri = resolveApiAssetUrl(`/img/simbolos/${presentation.symbol}.png`);
+          return (
+            <View key={kind} accessibilityLabel={label} style={styles.legendItem}>
+              {uri ? (
+                <Image source={{ uri }} resizeMode="contain" style={styles.legendIcon} />
+              ) : (
+                <Text style={[styles.legendFallback, { color: presentation.color }]}>●</Text>
+              )}
+              <Text style={[styles.legendText, { color: colors.textSecondary }]}>{label}</Text>
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {selectedFeature && (
         <View
           style={[
             styles.placeCard,
@@ -258,28 +564,42 @@ export default function MapTabScreen() {
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Cerrar detalles del lugar"
-            onPress={() => setSelectedPlace(null)}
+            accessibilityLabel="Cerrar detalles del registro"
+            onPress={() => setSelectedFeature(null)}
             style={styles.closePlace}
           >
             <Text style={[styles.closePlaceText, { color: colors.textSecondary }]}>×</Text>
           </Pressable>
-          {selectedPlace.imagen && (
-            <Image source={{ uri: selectedPlace.imagen }} style={styles.placeImage} />
+          {featureImage(selectedFeature) && (
+            <Image source={{ uri: featureImage(selectedFeature) ?? undefined }} style={styles.placeImage} />
           )}
           <Text style={styles.placeType}>
-            {selectedPlace.tipo ? formatPlaceType(selectedPlace.tipo).toLocaleUpperCase("es-MX") : "LUGAR"}
+            {getMapMarkerPresentation(
+              featureKind(selectedFeature),
+              selectedFeature.layer === "voluntariados" && selectedFeature.data.lleno,
+            ).label.toLocaleUpperCase("es-MX")}
           </Text>
-          <Text style={[styles.placeTitle, { color: colors.text }]}>{selectedPlace.nombre}</Text>
-          {selectedPlace.municipio && (
-            <Text style={[styles.placeSubtitle, { color: colors.textSecondary }]}>
-              {selectedPlace.municipio}
+          <Text numberOfLines={2} style={[styles.placeTitle, { color: colors.text }]}>
+            {featureTitle(selectedFeature)}
+          </Text>
+          {featureDetails(selectedFeature).map((line) => (
+            <Text key={line} style={[styles.placeSubtitle, { color: colors.textSecondary }]}>{line}</Text>
+          ))}
+          {featureDescription(selectedFeature) && (
+            <Text numberOfLines={3} style={[styles.placeDescription, { color: colors.textSecondary }]}>
+              {featureDescription(selectedFeature)}
             </Text>
           )}
-          {selectedPlace.descripcion && (
-            <Text numberOfLines={3} style={[styles.placeDescription, { color: colors.textSecondary }]}>
-              {selectedPlace.descripcion}
-            </Text>
+          {selectedFeature.layer !== "lugares" && (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => openFeatureDetail(selectedFeature)}
+              style={styles.detailButton}
+            >
+              <Text style={styles.detailButtonText}>
+                {selectedFeature.layer === "voluntariados" ? "Ver voluntariado" : "Ver especie"}
+              </Text>
+            </Pressable>
           )}
         </View>
       )}
@@ -289,7 +609,7 @@ export default function MapTabScreen() {
           style={[
             styles.permissionCard,
             {
-              bottom: insets.bottom + (selectedPlace ? 220 : 86),
+              bottom: insets.bottom + (selectedFeature ? 320 : 86),
               backgroundColor: colors.backgroundElement,
             },
           ]}
@@ -342,7 +662,7 @@ export default function MapTabScreen() {
           style={({ pressed }) => [
             styles.locationButton,
             {
-              bottom: insets.bottom + (selectedPlace ? 220 : 96),
+              bottom: insets.bottom + (selectedFeature ? 320 : 96),
               backgroundColor: colors.backgroundElement,
             },
             pressed && styles.pressed,
@@ -408,10 +728,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 16,
     right: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     borderRadius: 14,
     shadowColor: "#102319",
     shadowOffset: { width: 0, height: 2 },
@@ -419,29 +737,101 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3,
   },
-  demoDot: {
-    color: "#C58B2A",
-    fontSize: 10,
-    marginRight: 8,
+  layerControls: {
+    alignItems: "center",
+    gap: 7,
+  },
+  layerButton: {
+    minHeight: 38,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+  },
+  layerCount: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  layerLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  layerActions: {
+    minHeight: 22,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    paddingHorizontal: 4,
+    paddingTop: 5,
   },
   demoText: {
     fontSize: 12,
     fontWeight: "600",
   },
-  errorDot: {
-    color: "#A14537",
-    fontSize: 10,
-    marginRight: 8,
-  },
   noticeError: {
     color: "#A14537",
-    flex: 1,
+    fontSize: 11,
+    fontWeight: "600",
   },
   retryText: {
     color: "#164F3D",
     fontSize: 12,
     fontWeight: "700",
-    marginLeft: 8,
+  },
+  legend: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    maxHeight: 44,
+    borderRadius: 12,
+    elevation: 2,
+  },
+  legendContent: {
+    alignItems: "center",
+    gap: 12,
+    paddingHorizontal: 10,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  legendIcon: {
+    width: 19,
+    height: 19,
+  },
+  legendFallback: {
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  legendText: {
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  markerIcon: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+    borderRadius: 18,
+    shadowColor: "#102319",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  markerImage: {
+    width: 24,
+    height: 24,
+  },
+  markerFallback: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "900",
   },
   permissionCard: {
     position: "absolute",
@@ -491,19 +881,6 @@ const styles = StyleSheet.create({
     color: "#164F3D",
     fontSize: 14,
     fontWeight: "700",
-  },
-  callout: {
-    padding: 8,
-    maxWidth: 220,
-  },
-  calloutTitle: {
-    fontWeight: "700",
-    marginBottom: 2,
-  },
-  calloutSubtitle: {
-    color: "#4F6357",
-    fontSize: 12,
-    marginBottom: 2,
   },
   placeCard: {
     position: "absolute",
@@ -558,17 +935,46 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 6,
   },
+  detailButton: {
+    minHeight: 38,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 10,
+    paddingHorizontal: 12,
+    backgroundColor: "#164F3D",
+    borderRadius: 12,
+  },
+  detailButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   webFallback: {
-    flex: 1,
     gap: 12,
     paddingHorizontal: 18,
-    paddingTop: 196,
+    paddingTop: 270,
     paddingBottom: 24,
+  },
+  webLayer: {
+    gap: 10,
+  },
+  webLayerTitle: {
+    fontSize: 17,
+    fontWeight: "800",
   },
   webPlace: {
     padding: 14,
     borderRadius: 14,
     gap: 4,
+  },
+  webFeatureHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  webFeatureSymbol: {
+    fontSize: 16,
+    fontWeight: "900",
   },
   webMapLinkText: {
     color: "#164F3D",

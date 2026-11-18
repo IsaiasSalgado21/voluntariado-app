@@ -31,3 +31,11 @@ export type MarkerProps = {
   title?: string;
   description?: string;
 };
+
+export type CircleProps = {
+  center: { latitude: number; longitude: number };
+  radius: number;
+  strokeColor?: string;
+  strokeWidth?: number;
+  fillColor?: string;
+};

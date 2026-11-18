@@ -27,10 +27,18 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npm test
    ```
 
-The map uses the public `GET /api/v1/mapa/lugares` endpoint and displays active
-places with valid coordinates, including their name, type, municipality, and
-description when available. It does not display demonstration polygons or
-activities. The volunteer list uses the public
+The map uses the public `GET /api/v1/mapa/voluntariados`,
+`GET /api/v1/mapa/lugares`, and `GET /api/v1/mapa/flora-fauna` endpoints. Its
+three layers can be shown or hidden independently, and the legend distinguishes
+available and full volunteer activities, places, flora, and fauna using the
+symbols served from `/img/simbolos/`. Selecting a marker shows its key details;
+volunteer and species markers link to their detail screens. Sensitive species
+locations remain generalized by the API, and the map displays the returned
+approximate radius instead of trying to reveal a precise location. The map
+starts fitted to the available results when device location is not enabled;
+**Ver todos** can fit them again at any time. Expo Web lists each layer and
+links coordinates to OpenStreetMap because `react-native-maps` is native-only.
+The volunteer list uses the public
 `GET /api/v1/mapa/voluntariados` endpoint and `/api/v1/mapa/lugares` for place
 filters. The detail screen loads its activity by ID from
 `GET /api/voluntariados/{id}` and its place from `GET /api/lugares/{id}`, so it
